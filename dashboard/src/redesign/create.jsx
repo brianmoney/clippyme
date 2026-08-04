@@ -199,7 +199,7 @@ function SubConfig({ opts, set }) {
     border_width: opts.subOutlineW ?? 2,
     bg: !!opts.subBg,
     position: opts.subPosition || 'bottom',
-    align: opts.subAlign || 'center',
+    align: opts.subAlign || 'left',
     offset_y: opts.subOffsetY || 0,
   };
   const onChange = (partial) => {

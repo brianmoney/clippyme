@@ -251,6 +251,36 @@ async def _apply_banner(
     return banner_output
 
 
+# Gap between the bottom edge of the letterboxed video and the first caption
+# line — enough to not touch the picture, small enough to still read as attached.
+CAPTION_BAND_PAD = 24
+
+
+def _letterbox_caption_band_top(video_path, clip_info, subtitle_params, banner_active):
+    """Top Y for captions parked in the black band of a reframe-OFF clip.
+
+    Only for ``reframe_mode == 'disabled'`` with no banner: there the default
+    bottom margin leaves the captions floating in the middle of the black, so
+    they get pulled up against the video instead. Returns ``None`` (keep the
+    normal margins) for every other case — including an explicit top/center
+    position the user chose themselves.
+    """
+    if banner_active or (clip_info or {}).get("reframe_mode") != "disabled":
+        return None
+    if str((subtitle_params or {}).get("position", "bottom")).lower() != "bottom":
+        return None
+    from clippyme.domain.banner import letterbox_band_bottom
+    from clippyme.pipeline.media_probe import probe_dimensions
+
+    try:
+        width, height = probe_dimensions(video_path)
+    except Exception:
+        return None
+    if not width or not height:
+        return None
+    return letterbox_band_bottom(width, height) + CAPTION_BAND_PAD
+
+
 async def _apply_subtitles(
     current_input: str,
     job_dir: str,
@@ -260,6 +290,7 @@ async def _apply_subtitles(
     subtitle_params: dict,
     intermediate_files: list,
     pre_vf: str = None,
+    banner_active: bool = False,
 ) -> str:
     sub_output = os.path.join(job_dir, f"composed_sub_{clip_index}.mp4")
     intermediate_files.append(sub_output)
@@ -268,6 +299,8 @@ async def _apply_subtitles(
     clip_end = clip_info.get("end", 0)
     sub_mode = subtitle_params.get("mode", "karaoke")
     sub_offset_y = subtitle_params.get("offset_y", 0)
+    band_top = _letterbox_caption_band_top(
+        current_input, clip_info, subtitle_params, banner_active)
 
     if sub_mode == "karaoke":
         ass_path = os.path.join(job_dir, f"composed_subs_{clip_index}.ass")
@@ -294,6 +327,7 @@ async def _apply_subtitles(
                 offset_y=sub_offset_y,
                 outline_color=subtitle_params.get("outline_color"),
                 align=subtitle_params.get("align", "center"),
+                band_top=band_top,
             ),
         )
         if not success:
@@ -501,6 +535,7 @@ async def _compose_layers_impl(
                 subtitle_params,
                 intermediate_files,
                 pre_vf=merged_grade_vf,
+                banner_active=bool(active.get("banner")),
             )
             if merged_grade_vf:
                 layers_applied.append("grade")

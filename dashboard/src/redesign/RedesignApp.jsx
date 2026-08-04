@@ -33,7 +33,10 @@ const DEFAULT_OPTS = {
   clipsAuto: true, clips: 7, aspect: '9:16',
   detect: true, reframeMode: 'auto', smartcut: true, zoom: true, model: '',
   minDuration: 0,
-  subtitles: true, subMode: 'karaoke', subPreset: 'hormozi_bold', subPosition: 'center',
+  subtitles: true, subMode: 'karaoke', subPreset: 'hormozi_bold',
+  // Bottom-left is the default reading position: low enough to stay out of the
+  // picture, left so it clears the right-edge social UI.
+  subPosition: 'bottom', subAlign: 'left',
   subFont: 'Montserrat-Black', subColor: '#FFFFFF',
   hooks: true, hookPos: 'top', hookSize: 'M', hookStyle: { ...HOOK_STYLE_DEFAULT },
   logo: false, logoPos: 'top-right', logoSize: 'M', gradePreset: 'none',

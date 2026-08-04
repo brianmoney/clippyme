@@ -469,7 +469,8 @@ def generate_ass_karaoke(transcript, clip_start, clip_end, output_path,
                          words_per_group=3, uppercase=True,
                          font_name=None, font_color=None, highlight_color=None,
                          font_size=None, outline_width=None, position="bottom",
-                         offset_y=0, outline_color=None, align="center"):
+                         offset_y=0, outline_color=None, align="center",
+                         band_top=None):
     """
     Generate an ASS subtitle file with karaoke word-by-word highlighting.
     Uses \\k tags so the current word snaps from secondary (base) to primary (highlight) color.
@@ -525,7 +526,13 @@ def generate_ass_karaoke(transcript, clip_start, clip_end, output_path,
     position_norm = str(position).lower()
     if position_norm == "middle":
         position_norm = "center"  # frontend alias
-    if position_norm == "top":
+    if band_top is not None:
+        # Letterbox clip with nothing else in the black band: anchor the caption
+        # to the TOP so its first line starts right under the video (MarginV is
+        # measured from the top for \an7-9), instead of floating low in the black.
+        vpos = "top"
+        margin_v = _offset_margin("top", int(band_top), offset_y)
+    elif position_norm == "top":
         vpos = "top"
         margin_v = _offset_margin("top", 260, offset_y)
     elif position_norm == "center":

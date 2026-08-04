@@ -92,7 +92,7 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
     outline_color: sp.outline_color || preSubs.outline_color || '#000000',
     // Horizontal alignment: 'center' or 'left' (a bandiera). No 'right' — the
     // social UI (like/comment/share) lives down the right edge.
-    align: sp.align || preSubs.align || 'center',
+    align: sp.align || preSubs.align || 'left',
     offset_y: Number(sp.offset_y ?? preSubs.offset_y ?? 0),
     font_size: Number(sp.font_size ?? preSubs.font_size ?? 0),
     border_width: Number(sp.border_width ?? preSubs.border_width ?? 2),

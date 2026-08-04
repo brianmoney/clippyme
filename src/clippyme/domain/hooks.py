@@ -477,14 +477,22 @@ def add_hook_to_video(video_path, text, output_path, position="top", font_scale=
             filter_complex = build_hook_overlay_filter(
                 overlay_x, overlay_y, animate=animate, enable_end=hook_duration)
 
+        # The animated variant fades the hook in over time. A still PNG decodes to
+        # ONE frame at t=0, so fade would stamp alpha=0 on that single frame and
+        # overlay would repeat it forever — the hook never appeared at all. Loop
+        # the image so fade has frames to work on, and let -shortest end the
+        # output with the (finite) video instead of the (infinite) image.
+        loop_input = ["-loop", "1"] if animate else []
+        shortest = ["-shortest"] if animate else []
         ffmpeg_cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
-            "-i", img_path,
+            *loop_input, "-i", img_path,
             *extra_inputs,
             "-filter_complex", filter_complex,
             "-c:a", "copy",
             *x264_video_args(),
+            *shortest,
             output_path,
         ]
         subprocess.run(

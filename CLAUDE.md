@@ -167,11 +167,18 @@ separate pass. Grade+subtitles and hook+logo are pass-fused (one encode each)
 when possible. Toggles are UI-only state; composition happens at
 download/publish time. Serialised per clip via `clip_locks.clip_lock`.
 Hook overlay shows only the first 4s of the clip, EXCEPT
-`reframe_mode == disabled` where it stays for the whole clip.
+`reframe_mode == disabled` where it stays for the whole clip. An ANIMATED hook
+needs `-loop 1` on the PNG input + `-shortest` (a single image frame + `fade`
+= alpha 0 forever, i.e. no hook at all). With `reframe_mode == disabled` and
+NO banner, bottom captions re-anchor to the top of the black band
+(`compose._letterbox_caption_band_top` → `generate_ass_karaoke(band_top=)`) so
+they sit just under the video instead of floating low in the black.
 
 **Reframe**: three user modes — `auto` (face tracking + per-scene strategy),
 `subject` (FrameShift weighted-interest crop; legacy alias `object`),
-`disabled` (letterbox). Comfort mode is default-on: within a scene the camera
+`disabled` (letterbox). `disabled` also forces the Ken Burns push OFF
+(`zoom_end=None` in `process_video_to_vertical`) — a locked frame must not
+drift. Comfort mode is default-on: within a scene the camera
 never moves (`collapse_scene_targets`), zoom locks per scene. The output
 aspect is an explicit `process_video_to_vertical(..., aspect_ratio=)`
 parameter passed by `main.py` per job — there is no module-global. Post-hoc
