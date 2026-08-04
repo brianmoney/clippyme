@@ -216,6 +216,13 @@ def _validate_catchup(value) -> str:
     return catchup
 
 
+def _validate_clip_selection(value) -> str:
+    selection = str(value or "fixed").strip().lower()
+    if selection not in ("fixed", "auto"):
+        raise ValidationError("clip_selection must be 'fixed' or 'auto'")
+    return selection
+
+
 def _validate_bool(value, field: str) -> bool:
     if not isinstance(value, bool):
         raise ValidationError(f"{field} must be a boolean")
@@ -290,7 +297,13 @@ def validate_monitor_config(config: dict, default_timezone: str = "Europe/Rome")
             config.get("delete_after_publish", True), "delete_after_publish"),
         # Max clips kept per segment (top-N by viral_score) — bounds a
         # publish-limited monitor's output. Clamped to [1, 50], default 5.
+        # In "auto" selection it stays the ceiling, not the target.
         "max_clips": _clamp_int(config.get("max_clips"), 5, 1, 50),
+        # "fixed" always publishes the top max_clips of a segment; "auto" first
+        # drops everything under min_viral_score, so a weak segment yields
+        # fewer clips (or none) instead of padding the quota with filler.
+        "clip_selection": _validate_clip_selection(config.get("clip_selection")),
+        "min_viral_score": _clamp_int(config.get("min_viral_score"), 70, 1, 100),
     }
 
 
@@ -300,7 +313,8 @@ def validate_monitor_config(config: dict, default_timezone: str = "Europe/Rome")
 _UPDATABLE_CONFIG_FIELDS = (
     "instructions", "caption_template", "title_template", "min_gap_seconds",
     "segment_seconds", "prelive_skip_seconds", "platforms", "banner", "compose",
-    "poll_interval", "delete_after_publish", "max_clips",
+    "poll_interval", "delete_after_publish", "max_clips", "clip_selection",
+    "min_viral_score",
 )
 
 # The full set of cfg keys worth persisting/restoring (mirrors
@@ -310,6 +324,7 @@ _SNAPSHOT_CONFIG_FIELDS = (
     "prelive_skip_seconds", "min_gap_seconds", "poll_interval", "loop",
     "instructions", "caption_template", "title_template", "timezone",
     "banner", "compose", "catchup", "delete_after_publish", "max_clips",
+    "clip_selection", "min_viral_score",
 )
 
 
@@ -1110,6 +1125,12 @@ class LiveMonitor:
         # Bound each segment's clip count for the publish-limited monitor —
         # the pipeline keeps the top-N by viral_score (get_viral_clips).
         env["CLIPPYME_MAX_CLIPS"] = str(self.cfg.get("max_clips") or 5)
+        # "auto" adds a quality floor on top of that ceiling: a weak segment
+        # publishes fewer clips (or none) instead of filling the quota.
+        if self.cfg.get("clip_selection") == "auto":
+            env["CLIPPYME_MIN_VIRAL_SCORE"] = str(self.cfg.get("min_viral_score") or 70)
+        else:
+            env.pop("CLIPPYME_MIN_VIRAL_SCORE", None)
         return job_id, job_dir, env
 
     async def _submit_segment_job(self, seg_path: str) -> str:

@@ -13,6 +13,16 @@ def test_cap_noop_when_under_limit_or_zero():
     assert cap_clips_by_score(clips, 0) == clips
     assert cap_clips_by_score(clips, -1) == clips
 
+def test_min_score_floor_lets_the_count_follow_the_material():
+    clips = [{"viral_score": s} for s in (91, 88, 62, 55)]
+    # Auto selection: only the clips above the floor survive, ceiling untouched.
+    assert [c["viral_score"] for c in cap_clips_by_score(clips, 5, 70)] == [91, 88]
+    # A weak segment yields nothing rather than padding the quota.
+    assert cap_clips_by_score(clips, 5, 95) == []
+    # Floor + ceiling compose: floor first, then top-N of what is left.
+    assert [c["viral_score"] for c in cap_clips_by_score(clips, 1, 70)] == [91]
+
+
 WORDS = [{"start": 10.0, "end": 10.5, "word": "ciao"},
          {"start": 11.0, "end": 11.4, "word": "mondo"}]
 

@@ -57,6 +57,7 @@ can reject jobs before expensive work with:
 | `CLIPPYME_MAX_ESTIMATED_COST_USD` | disabled | Maximum estimated Gemini cost |
 | `CLIPPYME_MIN_FREE_DISK_GB` | `1` | Free space that must remain after estimated peak use |
 | `CLIPPYME_MAX_CLIPS` | disabled | Maximum number of ranked candidates actually rendered |
+| `CLIPPYME_MIN_VIRAL_SCORE` | disabled | `viral_score` floor applied before the cap (auto clip selection) |
 
 `--skip-analysis` is modelled separately: it creates one whole-video output and
 estimates zero Gemini usage.

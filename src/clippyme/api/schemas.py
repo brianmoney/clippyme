@@ -381,6 +381,8 @@ class LiveMonitorStartRequest(BaseModel):
     catchup: str = Field("backfill", pattern=r"^(backfill|live_only)$")
     delete_after_publish: bool = True
     max_clips: int = Field(5, ge=1, le=50)
+    clip_selection: str = Field("fixed", pattern=r"^(fixed|auto)$")
+    min_viral_score: int = Field(70, ge=1, le=100)
 
     @field_validator("timezone")
     @classmethod

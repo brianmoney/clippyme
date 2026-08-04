@@ -52,6 +52,26 @@ export function clampMonitorTimings(segmentMin, preliveMin, minGapMin) {
   };
 }
 
+// Build the clip-selection payload (how many clips a segment publishes).
+// "fixed" always takes the top `maxClips` by viral_score; "auto" keeps only
+// clips scoring at least `minScore` — a weak segment then publishes fewer
+// clips (or none) and `maxClips` is only the ceiling. Bounds mirror the
+// backend schema (max_clips 1–50, min_viral_score 1–100).
+export function clipSelectionPayload(selection, maxClips, minScore) {
+  const clampInt = (v, lo, hi, fallback) => {
+    // Number('') === 0 would clamp a cleared field to the minimum — treat
+    // empty/null as untouched and fall back to the schema default instead.
+    if (v === '' || v === null || v === undefined) return fallback;
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
+  };
+  return {
+    clip_selection: selection === 'auto' ? 'auto' : 'fixed',
+    max_clips: clampInt(maxClips, 1, 50, 5),
+    min_viral_score: clampInt(minScore, 1, 100, 70),
+  };
+}
+
 // Classify a failed /api/live-monitor/start error message so the UI can show
 // a targeted toast instead of a generic failure banner.
 export function classifyStartError(message) {

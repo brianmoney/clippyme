@@ -1341,6 +1341,32 @@ def test_validate_config_malformed_max_clips_uses_default():
     assert cfg["max_clips"] == 5
 
 
+def test_validate_config_clip_selection_defaults_and_bounds():
+    cfg = validate_monitor_config(_base_cfg())
+    assert cfg["clip_selection"] == "fixed" and cfg["min_viral_score"] == 70
+    auto = validate_monitor_config(_base_cfg(clip_selection="AUTO", min_viral_score=300))
+    assert auto["clip_selection"] == "auto" and auto["min_viral_score"] == 100
+    with pytest.raises(ValidationError):
+        validate_monitor_config(_base_cfg(clip_selection="sometimes"))
+
+
+def test_clip_selection_env_only_set_in_auto_mode(tmp_path):
+    from clippyme.domain.live_monitor import LiveMonitor
+
+    mon = LiveMonitor(id="kick:chan", jobs={}, job_queue=None, output_dir=str(tmp_path))
+    mon._gemini_key = "k"
+    mon.cfg = validate_monitor_config(_base_cfg(max_clips=8))
+    _, _, env = mon._new_job_dir()
+    assert env["CLIPPYME_MAX_CLIPS"] == "8"
+    assert "CLIPPYME_MIN_VIRAL_SCORE" not in env
+
+    mon.cfg = validate_monitor_config(
+        _base_cfg(max_clips=8, clip_selection="auto", min_viral_score=82))
+    _, _, env = mon._new_job_dir()
+    assert env["CLIPPYME_MAX_CLIPS"] == "8"          # still the ceiling
+    assert env["CLIPPYME_MIN_VIRAL_SCORE"] == "82"   # plus the quality floor
+
+
 def test_monitor_snapshot_restores_pending_backfill(tmp_path):
     import json
     from clippyme.domain.live_monitor import LiveMonitor

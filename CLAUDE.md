@@ -44,7 +44,11 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   vod modes, global `picked_slots` publish spacing, state in
   `data/live_monitor.json`; durable auto-resume via `resume_on_start`;
   runtime config updates `POST /api/live-monitor/{id}/config` (allow-listed
-  fields, apply to future clips); start-time `catchup: backfill|live_only`;
+  fields, apply to future clips); per-segment clip selection
+  (`clip_selection: fixed|auto` — `fixed` publishes the top `max_clips` by
+  viral_score, `auto` adds a `min_viral_score` floor via
+  `CLIPPYME_MIN_VIRAL_SCORE` so a weak segment yields fewer clips or none,
+  with `max_clips` staying the ceiling); start-time `catchup: backfill|live_only`;
   publishing pause/resume `POST /api/live-monitor/{id}/publishing` with a
   persisted pending queue that auto-drains on resume/restart; after a
   confirmed Zernio publish the clip's artifacts are deleted and its metadata
