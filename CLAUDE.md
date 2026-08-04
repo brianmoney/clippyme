@@ -51,7 +51,11 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   with `max_clips` staying the ceiling); per-monitor `smart_cut` (opt-in — adds
   the `smartcut` toggle to the auto-publish compose recipe) and
   `letterbox_zoom` (monitors always render reframe-`disabled`);
-  start-time `catchup: backfill|live_only`;
+  start-time `catchup: backfill|live_only` (live mode only — VOD processes
+  whole feed items, so the UI hides it); `prelive_skip_seconds` applies to VOD
+  jobs too on Kick/Twitch (their VODs open on the same waiting screen) via
+  `build_main_cmd(start_offset=)` → `--start-offset` → the orchestrator's
+  stream-copy head trim, never on YouTube uploads;
   publishing pause/resume `POST /api/live-monitor/{id}/publishing` with a
   persisted pending queue that auto-drains on resume/restart; after a
   confirmed Zernio publish the clip's artifacts are deleted and its metadata

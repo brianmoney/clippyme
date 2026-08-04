@@ -30,6 +30,19 @@ const SUB_DEFAULTS = {
 const ZOOM_OPTIONS = LETTERBOX_ZOOM_PERCENTS.map(
   (p) => ({ id: String(p), label: p ? `${p}%` : 'No zoom' }));
 
+// The start form is long enough that a lone "Min gap" or platform picker reads
+// without context. Grouping by what a field steers — what gets captured, how
+// the clips look, where they get posted — is the whole point of this wrapper.
+function Group({ title, hint, children }) {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div className="cm-title" style={{ marginBottom: hint ? 2 : 10 }}>{title}</div>
+      {hint && <div className="od" style={{ marginBottom: 12 }}>{hint}</div>}
+      {children}
+    </div>
+  );
+}
+
 const STATE_LABEL = {
   idle: 'Idle',
   waiting_live: 'Waiting for the channel to go live',
@@ -388,6 +401,7 @@ export function LiveMonitorView({ pushToast }) {
       </Panel>
 
       <Panel title="Start monitor" sub="Requires Zernio configured in Settings" icon="wand-sparkles">
+        <Group title="Source" hint="What gets watched, and which part of it is worth clipping.">
         <div className="field">
           <span className="field-label">Platform</span>
           <Segmented value={platform} onChange={setPlatform} options={PLATFORM_OPTIONS} />
@@ -402,6 +416,14 @@ export function LiveMonitorView({ pushToast }) {
           )}
         </div>
 
+        <div className="field">
+          <span className="field-label">{PLATFORM_LABEL[platform]} channel</span>
+          <input className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+            aria-label="Channel" placeholder={SLUG_PLACEHOLDER[platform]}
+            value={slug} onChange={(e) => setSlug(e.target.value)} onBlur={() => setTouched(true)} />
+          {touched && slugError && <div className="od" style={{ color: 'var(--danger)' }}>{slugError}</div>}
+        </div>
+
         {/* Catchup only steers the live capture loop (backfill of the windows
             missed before the monitor noticed the stream). VOD mode processes
             whole items from a feed, so the choice is meaningless there. */}
@@ -413,6 +435,34 @@ export function LiveMonitorView({ pushToast }) {
           </div>
         )}
 
+        {/* Segment length only exists for the live capture loop. Prelive skip
+            survives into VOD mode for Kick/Twitch — those recordings start with
+            the same waiting screen — but a YouTube upload has no prelive. */}
+        <div style={{ display: 'grid', gridTemplateColumns: !isVod && platform !== 'youtube' ? 'repeat(2,1fr)' : '1fr', gap: 8 }}>
+          {!isVod && (
+            <label className="field">
+              <span className="field-label">Segment (min)</span>
+              <input className="key-input" type="number" min="1" max="60" aria-label="Segment minutes"
+                value={segmentMin} onChange={(e) => setSegmentMin(Number(e.target.value))} />
+            </label>
+          )}
+          {platform !== 'youtube' && (
+            <label className="field">
+              <span className="field-label">Prelive skip (min)</span>
+              <input className="key-input" type="number" min="0" max="120" aria-label="Prelive skip minutes"
+                value={preliveMin} onChange={(e) => setPreliveMin(Number(e.target.value))} />
+              <div className="od">Drops the waiting screen at the head of the {isVod ? 'recording' : 'stream'}.</div>
+            </label>
+          )}
+        </div>
+
+        <div className="opt" style={{ borderBottom: 0 }}>
+          <div className="otxt"><div className="ot">Loop</div><div className="od">Keep monitoring for the next session after this one ends</div></div>
+          <div className="r"><Switch on={loop} onChange={setLoop} /></div>
+        </div>
+        </Group>
+
+        <Group title="Clips" hint="How many clips each run yields, and how they look.">
         <div className="field">
           <span className="field-label">Clips per segment</span>
           <Segmented full value={clipSelection} onChange={setClipSelection}
@@ -457,82 +507,6 @@ export function LiveMonitorView({ pushToast }) {
         </div>
 
         <div className="field">
-          <span className="field-label">{PLATFORM_LABEL[platform]} channel</span>
-          <input className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
-            aria-label="Channel" placeholder={SLUG_PLACEHOLDER[platform]}
-            value={slug} onChange={(e) => setSlug(e.target.value)} onBlur={() => setTouched(true)} />
-          {touched && slugError && <div className="od" style={{ color: 'var(--danger)' }}>{slugError}</div>}
-        </div>
-
-        <div className="field">
-          <span className="field-label">Platforms</span>
-          <div className="plats">
-            {PLATFORMS.map((p) => {
-              const has = !!accounts[PLAT[p.id].acct];
-              return (
-                <PlatPill key={p.id} {...p} on={plats[p.id] && has}
-                  onClick={() => (has ? toggle(p.id) : pushToast?.('warn', `No ${PLAT[p.id].label} account saved`))} />
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="field">
-          <span className="field-label">Title template (optional)</span>
-          <input className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
-            aria-label="Title template" placeholder="{title}"
-            value={titleTemplate} onChange={(e) => setTitleTemplate(e.target.value)} />
-        </div>
-        <div className="field">
-          <span className="field-label">Caption template (optional)</span>
-          <textarea className="ta" rows="2" aria-label="Caption template" placeholder="{hook}"
-            value={captionTemplate} onChange={(e) => setCaptionTemplate(e.target.value)}></textarea>
-        </div>
-        <div className="field">
-          <span className="field-label"><Icon n="sparkles" style={{ color: 'var(--brand-blue)' }} /> AI instructions · optional</span>
-          <textarea className="ta" rows="2" aria-label="AI instructions" value={instructions}
-            placeholder="e.g. “Find the funniest moments” or “Skip the intro, focus on the demo”"
-            onChange={(e) => setInstructions(e.target.value)}></textarea>
-        </div>
-
-        <div className="opt" style={{ borderBottom: 0 }}>
-          <div className="otxt"><div className="ot">Subtitles (customize)</div><div className="od">Leave off to use server defaults</div></div>
-          <div className="r"><Switch on={subOn} onChange={setSubOn} label="Customize subtitles" /></div>
-        </div>
-        {subOn && (
-          <div style={{ marginBottom: 14 }}>
-            <SubtitleControls variant="create" value={sub} onChange={(p) => setSub((s) => ({ ...s, ...p }))} />
-          </div>
-        )}
-
-        <div style={{ display: 'grid', gridTemplateColumns: isVod ? '1fr' : 'repeat(3,1fr)', gap: 8, marginBottom: 14 }}>
-          {!isVod && (
-            <label className="field">
-              <span className="field-label">Segment (min)</span>
-              <input className="key-input" type="number" min="1" max="60" aria-label="Segment minutes"
-                value={segmentMin} onChange={(e) => setSegmentMin(Number(e.target.value))} />
-            </label>
-          )}
-          {!isVod && (
-            <label className="field">
-              <span className="field-label">Prelive skip (min)</span>
-              <input className="key-input" type="number" min="0" max="120" aria-label="Prelive skip minutes"
-                value={preliveMin} onChange={(e) => setPreliveMin(Number(e.target.value))} />
-            </label>
-          )}
-          <label className="field">
-            <span className="field-label">Min gap (min)</span>
-            <input className="key-input" type="number" min="0" max="1440" aria-label="Minimum publish gap minutes"
-              value={minGapMin} onChange={(e) => setMinGapMin(Number(e.target.value))} />
-          </label>
-        </div>
-
-        <div className="opt" style={{ borderBottom: 0 }}>
-          <div className="otxt"><div className="ot">Loop</div><div className="od">Keep monitoring for the next session after this one ends</div></div>
-          <div className="r"><Switch on={loop} onChange={setLoop} /></div>
-        </div>
-
-        <div className="field">
           <span className="field-label">Attribution banner</span>
           <Segmented full value={bannerMode} onChange={setBannerMode}
             options={[
@@ -551,6 +525,59 @@ export function LiveMonitorView({ pushToast }) {
             </div>
           )}
         </div>
+
+        <div className="opt" style={{ borderBottom: 0 }}>
+          <div className="otxt"><div className="ot">Subtitles (customize)</div><div className="od">Leave off to use server defaults</div></div>
+          <div className="r"><Switch on={subOn} onChange={setSubOn} label="Customize subtitles" /></div>
+        </div>
+        {subOn && (
+          <div style={{ marginBottom: 14 }}>
+            <SubtitleControls variant="create" value={sub} onChange={(p) => setSub((s) => ({ ...s, ...p }))} />
+          </div>
+        )}
+
+        <div className="field">
+          <span className="field-label"><Icon n="sparkles" style={{ color: 'var(--brand-blue)' }} /> AI instructions · optional</span>
+          <textarea className="ta" rows="2" aria-label="AI instructions" value={instructions}
+            placeholder="e.g. “Find the funniest moments” or “Skip the intro, focus on the demo”"
+            onChange={(e) => setInstructions(e.target.value)}></textarea>
+        </div>
+        </Group>
+
+        <Group title="Publishing" hint="Where every finished clip goes on Zernio, and how far apart the posts are scheduled.">
+        <div className="field">
+          <span className="field-label">Post to</span>
+          <div className="plats">
+            {PLATFORMS.map((p) => {
+              const has = !!accounts[PLAT[p.id].acct];
+              return (
+                <PlatPill key={p.id} {...p} on={plats[p.id] && has}
+                  onClick={() => (has ? toggle(p.id) : pushToast?.('warn', `No ${PLAT[p.id].label} account saved`))} />
+              );
+            })}
+          </div>
+          <div className="od">Accounts come from the Zernio section in Settings.</div>
+        </div>
+
+        <label className="field">
+          <span className="field-label">Min gap (min)</span>
+          <input className="key-input" type="number" min="0" max="1440" aria-label="Minimum publish gap minutes"
+            value={minGapMin} onChange={(e) => setMinGapMin(Number(e.target.value))} />
+          <div className="od">Minimum spacing between two scheduled posts — shared across every running monitor.</div>
+        </label>
+
+        <div className="field">
+          <span className="field-label">Title template (optional)</span>
+          <input className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+            aria-label="Title template" placeholder="{title}"
+            value={titleTemplate} onChange={(e) => setTitleTemplate(e.target.value)} />
+        </div>
+        <div className="field">
+          <span className="field-label">Caption template (optional)</span>
+          <textarea className="ta" rows="2" aria-label="Caption template" placeholder="{hook}"
+            value={captionTemplate} onChange={(e) => setCaptionTemplate(e.target.value)}></textarea>
+        </div>
+        </Group>
 
         <Btn variant="grad" icon="wand-sparkles" disabled={!canStart || starting} onClick={onStart} block>
           {starting ? 'Starting…' : 'Start monitor'}

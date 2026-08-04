@@ -166,6 +166,15 @@ test('catchup defaults to backfill', async () => {
   expect(startLiveMonitor.mock.calls[0][0].catchup).toBe('backfill');
 });
 
+test('prelive skip survives VOD mode but disappears for YouTube', async () => {
+  render(<LiveMonitorView />);
+  // A Kick VOD is the recording of a live — the waiting screen is still there.
+  fireEvent.click(screen.getByRole('button', { name: 'VOD' }));
+  expect(screen.getByLabelText('Prelive skip minutes')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'YouTube' }));
+  await waitFor(() => expect(screen.queryByLabelText('Prelive skip minutes')).toBeNull());
+});
+
 test('catchup control is hidden in VOD mode', async () => {
   render(<LiveMonitorView />);
   expect(screen.getByRole('button', { name: 'From now only' })).toBeInTheDocument();

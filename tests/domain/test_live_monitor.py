@@ -1420,3 +1420,17 @@ def test_youtube_monitor_id_is_stable_and_path_safe():
 
 def test_non_youtube_monitor_id_remains_human_readable():
     assert monitor_id_for("kick", "creator") == "kick:creator"
+
+
+def test_vod_start_offset_skips_prelive_only_where_a_prelive_exists():
+    from types import SimpleNamespace
+
+    from clippyme.domain.live_monitor import LiveMonitor
+
+    cfg = {"prelive_skip_seconds": 1800}
+    # A Kick/Twitch VOD is the recording of a live: same waiting screen at the head.
+    kick = SimpleNamespace(platform="kick", cfg=cfg)
+    assert LiveMonitor._vod_start_offset(kick) == 1800
+    # A YouTube upload has no prelive — trimming would eat real content.
+    yt = SimpleNamespace(platform="youtube", cfg=cfg)
+    assert LiveMonitor._vod_start_offset(yt) == 0.0

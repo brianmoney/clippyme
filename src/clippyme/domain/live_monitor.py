@@ -1179,6 +1179,17 @@ class LiveMonitor:
         logger.info("LiveMonitor %s submitted segment job %s", self.id, job_id)
         return job_id
 
+    def _vod_start_offset(self) -> float:
+        """Prelive skip for a VOD job, in seconds.
+
+        A Kick/Twitch VOD is the recording of a live, waiting screen included —
+        the same dead head the live loop skips. A YouTube upload has no prelive,
+        so trimming one would eat real content.
+        """
+        if self.platform == "youtube":
+            return 0.0
+        return float(self.cfg.get("prelive_skip_seconds") or 0)
+
     async def _submit_url_job(self, url: str) -> str:
         from clippyme.domain.job_results import build_main_cmd
         from clippyme.domain.job_submission import submit_job
@@ -1188,6 +1199,7 @@ class LiveMonitor:
         cmd = build_main_cmd(url=url, output_dir=job_dir, cookies_path=cookies_path,
                              reframe_mode="disabled",
                              letterbox_zoom=self.cfg.get("letterbox_zoom") or 0,
+                             start_offset=self._vod_start_offset(),
                              instructions=self.cfg.get("instructions") or None,
                              monitor=True)
         await submit_job(

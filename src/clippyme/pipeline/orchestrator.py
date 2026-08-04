@@ -152,6 +152,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="auto",
     )
     parser.add_argument("--letterbox-zoom", type=float, default=0.0)
+    parser.add_argument("--start-offset", type=float, default=0.0)
     parser.add_argument("--language", type=str, default=None)
     parser.add_argument("--aspect", choices=["9:16", "1:1", "16:9"], default="9:16")
     parser.add_argument("--monitor", action="store_true")
@@ -186,6 +187,52 @@ def _max_clips_from_env() -> int | None:
         return None
 
 
+def _transcript_cache_key(args: argparse.Namespace) -> str | None:
+    """Cache slot for a URL job: the URL, plus the head trim when there is one."""
+    if not args.url:
+        return None
+    try:
+        offset = float(getattr(args, "start_offset", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        offset = 0.0
+    return f"{args.url}#start={int(offset)}" if offset > 0 else args.url
+
+
+def _trim_head(input_video: str, output_dir: str, offset: float) -> str:
+    """Drop the first ``offset`` seconds of the source, stream-copied.
+
+    This is the VOD counterpart of the live monitor's prelive skip: the
+    recording of a stream starts with the waiting screen, which is worth
+    nothing and costs transcription. Every downstream timestamp is relative to
+    the trimmed file, so nothing else needs to know about the offset.
+
+    Falls back to the untouched source on any failure (a truncated container, a
+    missing ffmpeg, an offset past the end) — a bad skip must not fail a job.
+    """
+    try:
+        seconds = float(offset or 0.0)
+    except (TypeError, ValueError):
+        return input_video
+    if seconds <= 0:
+        return input_video
+
+    trimmed = os.path.join(output_dir, f"trimmed_{os.path.basename(input_video)}")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", f"{seconds:.3f}", "-i", input_video,
+             "-c", "copy", "-avoid_negative_ts", "make_zero", trimmed],
+            check=True, capture_output=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f"⚠️ start-offset trim failed ({exc}); using the untrimmed source", flush=True)
+        return input_video
+    if not _valid_file(trimmed, 10_000):
+        print("⚠️ start-offset trim produced nothing; using the untrimmed source", flush=True)
+        return input_video
+    print(f"✂️ Skipped the first {seconds:.0f}s of the source", flush=True)
+    return os.path.abspath(trimmed)
+
+
 def _prepare_input(args: argparse.Namespace, output_dir: str, state: RuntimeState, legacy):
     state.start("acquiring", "acquiring source media")
     if args.input:
@@ -209,6 +256,7 @@ def _prepare_input(args: argparse.Namespace, output_dir: str, state: RuntimeStat
             input_video = os.path.abspath(input_video)
     if not _valid_file(input_video):
         raise FileNotFoundError(f"Input file not found or empty: {input_video}")
+    input_video = _trim_head(input_video, output_dir, getattr(args, "start_offset", 0.0))
     state.complete_stage(
         "acquiring",
         artifacts={
@@ -280,13 +328,16 @@ def _load_or_transcribe(args, input_video: str, state: RuntimeState, legacy):
             return transcript
 
     state.start("transcribing", "transcribing speech")
-    transcript = legacy._load_cached_transcript(args.url) if args.url else None
+    # A trimmed source has its own timeline, so it needs its own cache slot —
+    # otherwise a later run with a different skip reuses shifted timestamps.
+    cache_key = _transcript_cache_key(args)
+    transcript = legacy._load_cached_transcript(cache_key) if cache_key else None
     if transcript:
         print("♻️ Reusing shared URL transcript cache", flush=True)
     else:
         transcript = legacy.transcribe_video(input_video)
-        if args.url:
-            legacy._save_transcript_cache(args.url, transcript)
+        if cache_key:
+            legacy._save_transcript_cache(cache_key, transcript)
     if not isinstance(transcript, dict):
         raise RuntimeError("transcription returned no structured result")
     _atomic_json(transcript_path, transcript)

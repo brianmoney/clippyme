@@ -47,6 +47,7 @@ def build_main_cmd(
     instructions: str | None = None,
     reframe_mode: str | None = None,
     letterbox_zoom: float | None = None,
+    start_offset: float | None = None,
     cookies_path: str | None = None,
     language: str | None = None,
     no_zoom: bool = False,
@@ -67,6 +68,12 @@ def build_main_cmd(
         zoom_norm = normalize_letterbox_zoom(letterbox_zoom)
     except (TypeError, ValueError):
         raise ValueError(f"invalid letterbox_zoom: {letterbox_zoom!r}")
+    # Seconds to drop off the head of the source (a VOD's prelive waiting
+    # screen). Bounded by the monitor's own prelive cap.
+    try:
+        offset_norm = max(0.0, min(float(start_offset or 0.0), 7200.0))
+    except (TypeError, ValueError):
+        raise ValueError(f"invalid start_offset: {start_offset!r}")
     if model is not None:
         model = model.strip()
         if model and not GEMINI_MODEL_RE.match(model):
@@ -100,6 +107,8 @@ def build_main_cmd(
     # Only meaningful for the letterbox render; 0 (the default) = whole frame.
     if zoom_norm:
         cmd.extend(["--letterbox-zoom", f"{zoom_norm:.2f}"])
+    if offset_norm:
+        cmd.extend(["--start-offset", f"{offset_norm:.0f}"])
     if aspect and aspect != "9:16":
         cmd.extend(["--aspect", aspect])
     if language and language.strip() and language.strip() != "multi":

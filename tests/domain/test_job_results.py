@@ -69,6 +69,23 @@ def test_letterbox_zoom_rejects_garbage():
         build_main_cmd(url="https://x.com/v", output_dir="o", letterbox_zoom="abc")
 
 
+def test_start_offset_omitted_when_zero_and_clamped_when_set():
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o")
+    assert "--start-offset" not in cmd
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o", start_offset=1800)
+    assert cmd[cmd.index("--start-offset") + 1] == "1800"
+    # Negative / absurd values can't reach ffmpeg as-is.
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o", start_offset=-5)
+    assert "--start-offset" not in cmd
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o", start_offset=99999)
+    assert cmd[cmd.index("--start-offset") + 1] == "7200"
+
+
+def test_start_offset_rejects_garbage():
+    with pytest.raises(ValueError, match="start_offset"):
+        build_main_cmd(url="https://x.com/v", output_dir="o", start_offset="abc")
+
+
 def test_build_main_cmd_monitor_flag():
     cmd = build_main_cmd(input_path="/x.mp4", output_dir="/out", monitor=True)
     assert "--monitor" in cmd
