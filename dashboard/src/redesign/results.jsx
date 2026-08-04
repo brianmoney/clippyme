@@ -2,7 +2,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Icon, Btn, Badge } from './primitives';
 import { LazyVideo } from './LazyVideo';
-import { clipPreviewSrc, fmtDuration, downloadClip, exportClip } from './realApi';
+import { clipPreviewSrc, fmtDuration, downloadClip, exportClip, getClipTranscript } from './realApi';
 
 const REFRAME_ICON = { auto: 'crop', subject: 'scan-face', object: 'scan-face', disabled: 'square' };
 const REFRAME_LABEL = { auto: 'Auto', subject: 'Subject', object: 'Subject', disabled: 'Off' };
@@ -10,6 +10,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselections, onUpdate, onEdit, onApplyToAll, selectMode, onPublish, pushToast }) {
   const [downloading, setDownloading] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [transcript, setTranscript] = useState(null); // null = not loaded yet
+  const [txLoading, setTxLoading] = useState(false);
+  const [txErr, setTxErr] = useState(false);
   const selected = state?.selected !== false;
   const score = Math.round(clip.viral_score || 0);
   const mode = state?.reframeMode || clip.reframe_mode || 'auto';
@@ -43,10 +47,30 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
     }
   };
 
+  // Toggle the in-gallery transcript panel. Transcript is fetched lazily from
+  // the same /api/transcript endpoint the manual-trim tab uses (clip-relative
+  // segments); it is cached once loaded so toggling is instant afterwards.
+  const toggleTranscript = async (event) => {
+    event.stopPropagation();
+    if (showTranscript) { setShowTranscript(false); return; }
+    setShowTranscript(true);
+    if (transcript !== null) return;
+    setTxLoading(true);
+    setTxErr(false);
+    try {
+      const data = await getClipTranscript(jobId, clip.original_index ?? index);
+      setTranscript(data);
+    } catch {
+      setTxErr(true);
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
   return (
     <article {...selectionProps} className={`clip${score >= 90 ? ' top' : ''}${selectMode && selected ? ' sel' : ''}`}>
       <div className="clip-media" style={{ padding: 0, background: '#000' }}>
-        <LazyVideo src={clipPreviewSrc(clip, state)} controls={!selectMode} playsInline muted={selectMode}
+        <LazyVideo key={clipPreviewSrc(clip, state)} src={clipPreviewSrc(clip, state)} controls={!selectMode} playsInline muted={selectMode}
           aria-label={`Preview ${title}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }} />
         <div className="clip-top" style={{ padding: 10 }}>
           <span className="score"><Icon n="flame" />{score}</span>
@@ -65,6 +89,8 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
       )}
       <div className="clip-foot">
         <span className="ttl" title={title}>{title}</span>
+        {!selectMode && <button type="button" className="mini" title="Show / hide this clip's transcript" aria-label="Toggle transcript"
+          aria-expanded={showTranscript} onClick={toggleTranscript}><Icon n="captions" /></button>}
         {!selectMode && <button type="button" className="mini" title="Apply these settings to all clips" aria-label="Apply settings to all clips" disabled={processing}
           onClick={(event) => { event.stopPropagation(); if (!processing && window.confirm("Apply this clip's settings to every other clip? Manual trim and per-clip hook text are not copied.")) onApplyToAll(index); }}><Icon n="copy" /></button>}
         <button type="button" className="mini" title="Download with edits" aria-label={`Download ${title}`} disabled={downloading || processing} onClick={doDownload}><Icon n={downloading ? 'loader' : 'download'} /></button>
@@ -74,6 +100,28 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
           if (window.confirm('Remove this clip from the grid? The file stays on disk.')) { onUpdate(index, { deleted: true }); pushToast?.('info', 'Clip removed'); }
         }}><Icon n="trash-2" /></button>
       </div>
+      {showTranscript && (
+        <div className="clip-transcript">
+          <div className="ct-head">
+            <span className="ct-title">Transcript</span>
+            {transcript?.language && <span className="ct-lang">{transcript.language}</span>}
+          </div>
+          {txLoading && <div className="eo-d ct-hint">Loading transcript…</div>}
+          {txErr && <div className="eo-d ct-hint">Transcript unavailable for this clip.</div>}
+          {transcript && transcript.segments && transcript.segments.length === 0 &&
+            <div className="eo-d ct-hint">No transcript for this clip range.</div>}
+          {transcript && transcript.segments && transcript.segments.length > 0 && (
+            <div className="trim-list">
+              {transcript.segments.map((s) => (
+                <div key={s.index} className="trim-seg" title={s.text} style={{ cursor: 'default' }}>
+                  <span className="trim-txt">{s.text}</span>
+                  <span className="trim-time">{s.start.toFixed(1)}s</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 });
