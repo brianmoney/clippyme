@@ -55,6 +55,20 @@ def test_reframe_mode_auto_is_omitted():
     assert "--reframe-mode" not in cmd
 
 
+def test_letterbox_zoom_omitted_when_off_and_normalized_when_set():
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o", reframe_mode="disabled")
+    assert "--letterbox-zoom" not in cmd
+    # The dashboard sends a percentage; the CLI takes a fraction.
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o",
+                         reframe_mode="disabled", letterbox_zoom=10)
+    assert cmd[cmd.index("--letterbox-zoom") + 1] == "0.10"
+
+
+def test_letterbox_zoom_rejects_garbage():
+    with pytest.raises(ValueError, match="letterbox_zoom"):
+        build_main_cmd(url="https://x.com/v", output_dir="o", letterbox_zoom="abc")
+
+
 def test_build_main_cmd_monitor_flag():
     cmd = build_main_cmd(input_path="/x.mp4", output_dir="/out", monitor=True)
     assert "--monitor" in cmd

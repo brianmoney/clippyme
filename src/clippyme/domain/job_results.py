@@ -8,6 +8,7 @@ import os
 import re
 
 from clippyme.domain.clip_resolve import clip_filename_for
+from clippyme.pipeline.reframe_ops import normalize_letterbox_zoom
 from clippyme.domain.runtime_state import runtime_result_fields
 
 logger = logging.getLogger("clippyme")
@@ -45,6 +46,7 @@ def build_main_cmd(
     output_dir: str,
     instructions: str | None = None,
     reframe_mode: str | None = None,
+    letterbox_zoom: float | None = None,
     cookies_path: str | None = None,
     language: str | None = None,
     no_zoom: bool = False,
@@ -61,6 +63,10 @@ def build_main_cmd(
     """
     if reframe_mode is not None and reframe_mode not in ALLOWED_REFRAME_MODES:
         raise ValueError(f"invalid reframe_mode: {reframe_mode!r}")
+    try:
+        zoom_norm = normalize_letterbox_zoom(letterbox_zoom)
+    except (TypeError, ValueError):
+        raise ValueError(f"invalid letterbox_zoom: {letterbox_zoom!r}")
     if model is not None:
         model = model.strip()
         if model and not GEMINI_MODEL_RE.match(model):
@@ -91,6 +97,9 @@ def build_main_cmd(
         cmd.extend(["--instructions", instructions])
     if reframe_mode and reframe_mode != "auto":
         cmd.extend(["--reframe-mode", reframe_mode])
+    # Only meaningful for the letterbox render; 0 (the default) = whole frame.
+    if zoom_norm:
+        cmd.extend(["--letterbox-zoom", f"{zoom_norm:.2f}"])
     if aspect and aspect != "9:16":
         cmd.extend(["--aspect", aspect])
     if language and language.strip() and language.strip() != "multi":

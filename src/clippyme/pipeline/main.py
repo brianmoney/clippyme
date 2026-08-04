@@ -20,7 +20,12 @@ from google import genai
 from dotenv import load_dotenv
 import json
 
-from clippyme.pipeline.reframe_ops import OneEuroFilter, drift_to_center, salient_crop_center
+from clippyme.pipeline.reframe_ops import (
+    OneEuroFilter,
+    drift_to_center,
+    normalize_letterbox_zoom,
+    salient_crop_center,
+)
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf')
@@ -621,6 +626,9 @@ if __name__ == '__main__':
     parser.add_argument('--reframe-mode', choices=['auto', 'disabled', 'subject', 'object'], default='auto',
                         help='Reframe mode: auto (face tracking), subject (FrameShift face-first '
                              'crop; "object" is a legacy alias), or disabled (4:3 crop with black bars)')
+    parser.add_argument('--letterbox-zoom', type=float, default=0.0,
+                        help="Fixed zoom for --reframe-mode disabled: 0 = whole frame between the "
+                             "black bars, 0.05-0.15 (or 5-15) crops that fraction off the width.")
     parser.add_argument('--reframe-only', action='store_true',
                         help='Skip download/analysis/cutting: take --input (an existing 16:9 '
                              'source slice) and re-run reframing + zoom/normalize/cover only. '
@@ -648,6 +656,14 @@ if __name__ == '__main__':
     aspect_ratio = {'9:16': 9 / 16, '1:1': 1.0, '16:9': 16 / 9}.get(args.aspect, 9 / 16)
     if args.aspect != '9:16':
         print(f"📐 Aspect ratio: {args.aspect} ({aspect_ratio:.3f})")
+
+    # Optional fixed zoom for the letterbox (reframe-disabled) render. Clamped
+    # to 0 / [0.05, 0.15] once here so every render call site below agrees.
+    try:
+        letterbox_zoom = normalize_letterbox_zoom(args.letterbox_zoom)
+    except ValueError:
+        print(f"❌ Invalid --letterbox-zoom: {args.letterbox_zoom!r}")
+        sys.exit(2)
 
     # Per-job Gemini model override — set the env BEFORE get_viral_clips, which
     # reads GEMINI_MODEL at call time (main.py get_viral_clips). Lets the user
@@ -703,7 +719,7 @@ if __name__ == '__main__':
             success = process_video_to_vertical(
                 args.input, tmp_output, reframe_mode=args.reframe_mode,
                 zoom_end=None if args.no_zoom else 1.05,
-                aspect_ratio=aspect_ratio)
+                aspect_ratio=aspect_ratio, letterbox_zoom=letterbox_zoom)
             if not success:
                 print("❌ Reframe failed.")
                 if os.path.exists(tmp_output):
@@ -755,7 +771,7 @@ if __name__ == '__main__':
         print("⏩ Skipping analysis, processing entire video...")
         output_file = args.output if args.output else os.path.join(output_dir, f"{video_title}_vertical.mp4")
         process_video_to_vertical(input_video, output_file, reframe_mode=args.reframe_mode,
-                                  aspect_ratio=aspect_ratio)
+                                  aspect_ratio=aspect_ratio, letterbox_zoom=letterbox_zoom)
     else:
         # 3. Transcribe (with cache for URL-based jobs)
         cached = _load_cached_transcript(args.url) if args.url else None
@@ -814,7 +830,7 @@ if __name__ == '__main__':
                 print("❌ Failed to identify clips. Converting whole video as fallback.")
                 output_file = os.path.join(output_dir, f"{video_title}_vertical.mp4")
                 process_video_to_vertical(input_video, output_file, reframe_mode=args.reframe_mode,
-                                          aspect_ratio=aspect_ratio)
+                                          aspect_ratio=aspect_ratio, letterbox_zoom=letterbox_zoom)
         else:
             print(f"🔥 Found {len(clips_data['shorts'])} viral clips!")
             
@@ -951,7 +967,7 @@ if __name__ == '__main__':
                     clip_source_path, clip_final_path,
                     reframe_mode=args.reframe_mode,
                     zoom_end=None if args.no_zoom else 1.05,
-                    aspect_ratio=aspect_ratio)
+                    aspect_ratio=aspect_ratio, letterbox_zoom=letterbox_zoom)
 
                 if success:
                     normalize_audio(clip_final_path)

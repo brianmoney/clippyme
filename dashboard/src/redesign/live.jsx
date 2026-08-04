@@ -7,7 +7,7 @@ import { Hero } from './chrome';
 import { Icon, Panel, Btn, Badge, Switch, Segmented, PlatPill, PLATFORMS } from './primitives';
 import { getZernio, startLiveMonitor, stopLiveMonitor, updateMonitorConfig, setMonitorPublishing } from './realApi';
 import { PLAT } from './publish';
-import { validateSlug, buildPlatformTargets, classifyStartError, clampMonitorTimings, clipSelectionPayload } from '../lib/liveMonitorForm';
+import { validateSlug, buildPlatformTargets, classifyStartError, clampMonitorTimings, clipSelectionPayload, zoomToPercent, LETTERBOX_ZOOM_PERCENTS } from '../lib/liveMonitorForm';
 import { buildMonitorBannerPayload } from '../lib/liveMonitorBanner';
 import { toComposeSubtitleParams, fromComposeSubtitleParams } from '../lib/subtitleComposeParams';
 import { BannerControls } from './bannerControls';
@@ -23,6 +23,12 @@ const SUB_DEFAULTS = {
   font_color: '#FFFFFF', outline_color: '#000000', font_size: 0,
   border_width: 2, bg: false, position: 'bottom', align: 'center', offset_y: 0,
 };
+
+// Monitors always render letterboxed (reframe disabled): the whole frame sits
+// between black bars. The optional fixed zoom trims that % off the width so the
+// picture is bigger and the bars smaller.
+const ZOOM_OPTIONS = LETTERBOX_ZOOM_PERCENTS.map(
+  (p) => ({ id: String(p), label: p ? `${p}%` : 'No zoom' }));
 
 const STATE_LABEL = {
   idle: 'Idle',
@@ -89,6 +95,10 @@ function MonitorSettings({ monitor, onApply, applying }) {
   const [clipSelectionTouched, setClipSelectionTouched] = useState(false);
   const [maxClips, setMaxClips] = useState(typeof cfg.max_clips === 'number' ? String(cfg.max_clips) : '');
   const [minScore, setMinScore] = useState(typeof cfg.min_viral_score === 'number' ? String(cfg.min_viral_score) : '');
+  const [smartCut, setSmartCut] = useState(!!cfg.smart_cut);
+  const [smartCutTouched, setSmartCutTouched] = useState(false);
+  const [zoom, setZoom] = useState(zoomToPercent(cfg.letterbox_zoom));
+  const [zoomTouched, setZoomTouched] = useState(false);
 
   const apply = () => {
     const partial = {};
@@ -104,6 +114,8 @@ function MonitorSettings({ monitor, onApply, applying }) {
     const bounded = clipSelectionPayload(clipSelection, maxClips, minScore);
     if (maxClips !== '') partial.max_clips = bounded.max_clips;
     if (minScore !== '') partial.min_viral_score = bounded.min_viral_score;
+    if (smartCutTouched) partial.smart_cut = smartCut;
+    if (zoomTouched) partial.letterbox_zoom = zoom;
     onApply(monitor.id, partial);
   };
 
@@ -167,6 +179,17 @@ function MonitorSettings({ monitor, onApply, applying }) {
         <Switch on={subOn} onChange={setSubOn} />
       </div>
       {subOn && <SubtitleControls variant="create" value={sub} onChange={(p) => setSub((s) => ({ ...s, ...p }))} />}
+      <div className="opt" style={{ borderBottom: 0, paddingLeft: 0, paddingRight: 0 }}>
+        <div className="otxt"><div className="ot">Smart Cut</div><div className="od">Removes silences and fillers before publishing</div></div>
+        <Switch on={smartCut} label={`Smart cut ${monitor.id}`}
+          onChange={(on) => { setSmartCut(on); setSmartCutTouched(true); }} />
+      </div>
+      <div className="field">
+        <span className="field-label">Letterbox zoom ({zoom ? `${zoom}%` : 'off'})</span>
+        <Segmented full value={String(zoom)}
+          onChange={(v) => { setZoom(Number(v)); setZoomTouched(true); }}
+          options={ZOOM_OPTIONS} />
+      </div>
       <div className="opt" style={{ borderBottom: 0, paddingLeft: 0, paddingRight: 0 }}>
         <div className="otxt"><div className="ot">Delete clip after publish</div><div className="od">Frees disk once a clip is confirmed published</div></div>
         <Switch on={deleteAfterPublish} label={`Delete after publish ${monitor.id}`}
@@ -254,6 +277,8 @@ export function LiveMonitorView({ pushToast }) {
   const [clipSelection, setClipSelection] = useState('fixed');
   const [maxClips, setMaxClips] = useState(5);
   const [minScore, setMinScore] = useState(70);
+  const [smartCut, setSmartCut] = useState(false);
+  const [zoom, setZoom] = useState(0);
   const [subOn, setSubOn] = useState(false);
   const [sub, setSub] = useState(SUB_DEFAULTS);
   const [starting, setStarting] = useState(false);
@@ -289,6 +314,8 @@ export function LiveMonitorView({ pushToast }) {
         ...clipSelectionPayload(clipSelection, maxClips, minScore),
         loop,
         catchup,
+        smart_cut: smartCut,
+        letterbox_zoom: zoom,
         caption_template: captionTemplate,
         title_template: titleTemplate,
         instructions,
@@ -404,6 +431,24 @@ export function LiveMonitorView({ pushToast }) {
               ? 'Publishes only the clips scoring above the floor — a weak segment yields fewer, or none.'
               : 'Always publishes the top clips of each segment by viral score.'}
           </div>
+        </div>
+
+        <div className="field">
+          <span className="field-label">Letterbox zoom</span>
+          <Segmented full value={String(zoom)} onChange={(v) => setZoom(Number(v))} options={ZOOM_OPTIONS} />
+          <div className="od">
+            {zoom
+              ? `Crops ${zoom}% off the sides — bigger picture, smaller black bars.`
+              : 'Whole frame between the black bars, nothing cropped.'}
+          </div>
+        </div>
+
+        <div className="opt" style={{ paddingLeft: 0, paddingRight: 0 }}>
+          <div className="otxt">
+            <div className="ot">Smart Cut</div>
+            <div className="od">Removes silences and fillers from every published clip</div>
+          </div>
+          <Switch on={smartCut} label="Smart cut" onChange={setSmartCut} />
         </div>
 
         <div className="field">

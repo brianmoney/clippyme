@@ -36,6 +36,7 @@ from clippyme.pipeline.reframe_ops import (
     build_smoothed_trajectory,
     centroid_span,
     collapse_scene_targets,
+    letterbox_plan,
     salient_crop_center,
     weighted_interest_center,
 )
@@ -564,37 +565,23 @@ def select_cover_frame(video_path):
 
     return None
 
-def create_disabled_reframe(frame, output_width, output_height):
-    """
-    Center-crop to 4:3 then add black bars top/bottom to fill 9:16.
+def create_disabled_reframe(frame, output_width, output_height, zoom: float = 0.0):
+    """Reframe OFF: the whole frame inside black bars (top & bottom).
+
+    Nothing is cropped away by default — that is what "reframe disabled" means.
+    ``zoom`` (0 = off, else 0.05–0.15) trims that fraction off the width so the
+    picture is magnified by 1/(1-zoom) and the bars shrink. Geometry lives in
+    the pure ``reframe_ops.letterbox_plan``.
     """
     h, w = frame.shape[:2]
-    target_ratio = 4 / 3
-    current_ratio = w / h
-    if current_ratio > target_ratio:
-        new_w = int(h * target_ratio)
-        x_start = (w - new_w) // 2
-        cropped = frame[:, x_start:x_start + new_w]
-    else:
-        new_h = int(w / target_ratio)
-        y_start = (h - new_h) // 2
-        cropped = frame[y_start:y_start + new_h, :]
+    (cx, cy, cw, ch), (sw, sh), (ox, oy) = letterbox_plan(
+        w, h, output_width, output_height, zoom)
 
-    scale = output_width / cropped.shape[1]
-    scaled_w = output_width
-    scaled_h = int(cropped.shape[0] * scale)
-    if scaled_h % 2 != 0:
-        scaled_h += 1
-    scaled = cv2.resize(cropped, (scaled_w, scaled_h))
+    cropped = frame[cy:cy + ch, cx:cx + cw]
+    scaled = cv2.resize(cropped, (sw, sh))
 
     canvas = np.zeros((output_height, output_width, 3), dtype=np.uint8)
-    y_offset = (output_height - scaled_h) // 2
-    if y_offset < 0:
-        crop_y = (-y_offset)
-        canvas[:] = scaled[crop_y:crop_y + output_height, :]
-    else:
-        canvas[y_offset:y_offset + scaled_h, :] = scaled
-
+    canvas[oy:oy + sh, ox:ox + sw] = scaled
     return canvas
 
 def _resize_to_output(img, w, h):
@@ -815,7 +802,8 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
 
 
 def process_video_to_vertical(input_video, final_output_video, reframe_mode='auto',
-                              zoom_end=None, aspect_ratio: float = 9 / 16):
+                              zoom_end=None, aspect_ratio: float = 9 / 16,
+                              letterbox_zoom: float = 0.0):
     """
     Core logic to convert horizontal video to vertical using scene detection and Active Speaker Tracking (MediaPipe).
 
@@ -824,6 +812,10 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
     apply_subtle_zoom decode+encode afterwards — one generation cheaper per
     clip. Falls back to the legacy post-pass when the container's frame count
     is unreadable (zoompan needs it for the per-frame increment).
+
+    letterbox_zoom: only meaningful for reframe_mode='disabled' — 0.0 keeps the
+    whole frame between the black bars, 0.05–0.15 crops that fraction off the
+    width for a fixed zoom (see reframe_ops.letterbox_plan).
 
     aspect_ratio: output width/height ratio (9/16 vertical default; 1.0 and
     16/9 for square/landscape jobs). Passed explicitly by main.py per job —
@@ -876,7 +868,8 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
 
     print(f"🎬 Processing clip: {input_video}")
     if reframe_mode == 'disabled':
-        print("   🚫 Reframe mode: DISABLED — clip placed inside a 9:16 frame with letterbox (black bars top & bottom).")
+        zoom_note = f" with a fixed {letterbox_zoom:.0%} zoom" if letterbox_zoom else " (full frame, nothing cropped)"
+        print(f"   🚫 Reframe mode: DISABLED — clip placed inside a 9:16 frame with letterbox{zoom_note}.")
         print("      (Scene detection still runs for consistency; face tracking is skipped.)")
     elif reframe_mode == 'subject':
         print("   🧩 Reframe mode: SUBJECT — FrameShift face-first 9:16 crop (faces 1.0 → persons 0.8 → objects 0.5).")
@@ -1052,7 +1045,8 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
                 # aborting the render and truncating the clip.
                 try:
                     if current_strategy == 'DISABLED':
-                        output_frame = create_disabled_reframe(frame, OUTPUT_WIDTH, OUTPUT_HEIGHT)
+                        output_frame = create_disabled_reframe(
+                            frame, OUTPUT_WIDTH, OUTPUT_HEIGHT, zoom=letterbox_zoom)
 
                     elif current_strategy == 'OBJECT':
                         # FrameShift face-first crop: weighted-interest centroid

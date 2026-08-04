@@ -622,3 +622,47 @@ def test_pan_smoother_reset_snaps_next_target():
     s.smooth(500.0, 1920)
     s.reset()
     assert s.smooth(900.0, 1920) == 900.0
+
+
+# --- letterbox ("reframe off") geometry --------------------------------------
+
+def test_letterbox_plan_keeps_the_whole_frame_by_default():
+    # Reframe disabled must letterbox, not crop: the full 1920x1080 source
+    # spans the output width and the leftover height stays black.
+    crop, size, offset = ro.letterbox_plan(1920, 1080, 1080, 1920)
+    assert crop == (0, 0, 1920, 1080)
+    assert size == (1080, 608)          # 1080 * 1080/1920 = 607.5 → even 608
+    assert offset == (0, (1920 - 608) // 2)
+
+
+def test_letterbox_plan_zoom_crops_the_sides_and_shrinks_the_bars():
+    _, base_size, _ = ro.letterbox_plan(1920, 1080, 1080, 1920)
+    crop, size, offset = ro.letterbox_plan(1920, 1080, 1080, 1920, zoom=0.15)
+    assert crop[0] == 144 and crop[2] == 1632          # 15% off the width, centred
+    assert crop[1] == 0 and crop[3] == 1080            # full height kept
+    assert size[1] > base_size[1]                      # taller picture → smaller bars
+    assert size[1] == pytest.approx(base_size[1] / 0.85, abs=2)
+    assert offset[1] == (1920 - size[1]) // 2
+
+
+def test_letterbox_plan_never_overflows_the_canvas():
+    # A zoom big enough to outgrow the output height takes the centre band
+    # instead of writing past the canvas.
+    crop, size, offset = ro.letterbox_plan(1920, 1080, 1080, 1200, zoom=0.5)
+    assert size[1] <= 1200
+    assert offset[1] + size[1] <= 1200
+    assert crop[1] > 0 and crop[1] + crop[3] <= 1080
+
+
+def test_normalize_letterbox_zoom_accepts_fractions_and_percentages():
+    assert ro.normalize_letterbox_zoom(None) == 0.0
+    assert ro.normalize_letterbox_zoom(0) == 0.0
+    assert ro.normalize_letterbox_zoom(0.1) == pytest.approx(0.10)
+    assert ro.normalize_letterbox_zoom(10) == pytest.approx(0.10)     # slider percent
+    assert ro.normalize_letterbox_zoom(0.5) == pytest.approx(0.15)    # clamped at ceiling
+    assert ro.normalize_letterbox_zoom(0.01) == pytest.approx(0.05)   # clamped at floor
+
+
+def test_normalize_letterbox_zoom_rejects_garbage():
+    with pytest.raises(ValueError):
+        ro.normalize_letterbox_zoom("abc")

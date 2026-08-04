@@ -85,6 +85,9 @@ class ProcessRequest(BaseModel):
     url: str = Field(..., max_length=2048)
     instructions: Optional[str] = Field(None, max_length=MAX_INSTRUCTIONS_LEN)
     reframe_mode: Optional[str] = Field(None, pattern=r"^(auto|disabled|subject|object)$")
+    # Fixed zoom for the letterbox render. 0 (default) = whole frame between
+    # the bars; the dashboard sends a percentage (5-15), normalized downstream.
+    letterbox_zoom: Optional[float] = Field(None, ge=0, le=15)
     aspect: Optional[str] = Field(None, pattern=r"^(9:16|1:1|16:9)$")
     language: Optional[str] = Field(None, max_length=16)
     no_zoom: Optional[bool] = False
@@ -110,6 +113,9 @@ class BatchRequest(BaseModel):
     urls: List[str] = Field(..., min_length=1, max_length=20)
     instructions: Optional[str] = Field(None, max_length=MAX_INSTRUCTIONS_LEN)
     reframe_mode: Optional[str] = Field(None, pattern=r"^(auto|disabled|subject|object)$")
+    # Fixed zoom for the letterbox render. 0 (default) = whole frame between
+    # the bars; the dashboard sends a percentage (5-15), normalized downstream.
+    letterbox_zoom: Optional[float] = Field(None, ge=0, le=15)
     aspect: Optional[str] = Field(None, pattern=r"^(9:16|1:1|16:9)$")
     language: Optional[str] = Field(None, max_length=16)
     no_zoom: Optional[bool] = False
@@ -162,6 +168,9 @@ class ConfigUpdateRequest(BaseModel):
 
 class ReframeRequest(BaseModel):
     reframe_mode: Optional[str] = Field(None, pattern=r"^(auto|disabled|subject|object)$")
+    # Fixed zoom for the letterbox render. 0 (default) = whole frame between
+    # the bars; the dashboard sends a percentage (5-15), normalized downstream.
+    letterbox_zoom: Optional[float] = Field(None, ge=0, le=15)
 
 
 _OVERLAY_MAX_KEYS = 40
@@ -383,6 +392,10 @@ class LiveMonitorStartRequest(BaseModel):
     max_clips: int = Field(5, ge=1, le=50)
     clip_selection: str = Field("fixed", pattern=r"^(fixed|auto)$")
     min_viral_score: int = Field(70, ge=1, le=100)
+    # Burn Smart Cut (silence/filler removal) into every auto-published clip.
+    smart_cut: bool = False
+    # Fixed zoom on the monitor's letterbox render (percent; 0 = whole frame).
+    letterbox_zoom: float = Field(0, ge=0, le=15)
 
     @field_validator("timezone")
     @classmethod

@@ -72,6 +72,18 @@ export function clipSelectionPayload(selection, maxClips, minScore) {
   };
 }
 
+// Letterbox zoom is stored as a FRACTION by the backend (0, or 0.05–0.15) but
+// edited as a percentage in the UI. Anything outside the allowed band reads as
+// off, so a stale/garbage config never renders a bogus slider value.
+export const LETTERBOX_ZOOM_PERCENTS = [0, 5, 10, 15];
+
+export function zoomToPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const pct = Math.round(n > 1 ? n : n * 100);
+  return LETTERBOX_ZOOM_PERCENTS.includes(pct) ? pct : 0;
+}
+
 // Classify a failed /api/live-monitor/start error message so the UI can show
 // a targeted toast instead of a generic failure banner.
 export function classifyStartError(message) {

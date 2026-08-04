@@ -310,6 +310,18 @@ function OptionsPanel({ opts, set }) {
         <div className="r"><Segmented value={(opts.reframeMode === 'object' ? 'subject' : opts.reframeMode) || (opts.reframe === false ? 'disabled' : 'auto')} onChange={(id) => set({ reframeMode: id })}
           options={[{ id: 'auto', label: 'Auto' }, { id: 'subject', label: 'Subject' }, { id: 'disabled', label: 'Off' }]} /></div>
       </div>
+      {((opts.reframeMode === 'disabled') || (!opts.reframeMode && opts.reframe === false)) && (
+        <div className="opt">
+          <div className="oico"><Icon n="zoom-in" /></div>
+          <div className="otxt">
+            <div className="ot">Letterbox zoom</div>
+            <div className="od">Crop the sides for a bigger picture and smaller black bars</div>
+          </div>
+          <div className="r"><Segmented value={String(opts.letterboxZoom || 0)}
+            onChange={(id) => set({ letterboxZoom: Number(id) })}
+            options={[{ id: '0', label: 'Off' }, { id: '5', label: '5%' }, { id: '10', label: '10%' }, { id: '15', label: '15%' }]} /></div>
+        </div>
+      )}
       <OptRow icon="scissors" label="Smart cut" desc="Remove silence & filler words"
         on={opts.smartcut} set={(v) => set({ smartcut: v })} />
       <OptRow icon="zoom-in" label="Subtle zoom" desc="Gentle Ken Burns motion (1.0→1.05x)"

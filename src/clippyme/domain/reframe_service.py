@@ -16,17 +16,20 @@ from clippyme.domain.clip_locks import clip_lock
 from clippyme.domain.clip_resolve import clip_filename_for
 from clippyme.domain.errors import ClippyMeError, NotFoundError
 from clippyme.domain.job_artifacts import load_job_metadata, save_job_metadata
+from clippyme.pipeline.reframe_ops import normalize_letterbox_zoom
 from clippyme.storage.config_store import load_persistent_config
 
 logger = logging.getLogger(__name__)
 
 
 async def run_reframe(*, job_id: str, clip_index: int, mode: str,
-                      output_root: str, jobs: dict) -> dict:
+                      output_root: str, jobs: dict,
+                      letterbox_zoom: float | None = None) -> dict:
     """Re-render one clip with a different reframe mode via ``main.py
     --reframe-only`` and update metadata + in-memory job state.
 
     ``mode`` must already be canonical ('auto' / 'subject' / 'disabled').
+    ``letterbox_zoom`` only applies to 'disabled' (0 = whole frame).
     Returns the endpoint response payload (cache-busted ``new_video_url``).
     """
     output_dir = os.path.join(output_root, job_id)
@@ -69,6 +72,10 @@ async def run_reframe(*, job_id: str, clip_index: int, mode: str,
         "-o", target_path,
         "--reframe-mode", mode,
     ]
+
+    zoom = normalize_letterbox_zoom(letterbox_zoom)
+    if zoom and mode == "disabled":
+        cmd += ["--letterbox-zoom", f"{zoom:.2f}"]
 
     # Re-render at the job's ORIGINAL aspect (persisted in metadata at process
     # time). Omitting this defaults main.py to 9:16 and squashes a 1:1/16:9 clip

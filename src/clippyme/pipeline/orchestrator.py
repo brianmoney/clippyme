@@ -30,6 +30,7 @@ from clippyme.pipeline.preflight import (
     enforce_preflight,
     format_preflight_log,
 )
+from clippyme.pipeline.reframe_ops import normalize_letterbox_zoom
 from clippyme.pipeline.run_ops import (
     build_cut_command,
     clip_output_basename,
@@ -150,6 +151,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["auto", "disabled", "subject", "object"],
         default="auto",
     )
+    parser.add_argument("--letterbox-zoom", type=float, default=0.0)
     parser.add_argument("--language", type=str, default=None)
     parser.add_argument("--aspect", choices=["9:16", "1:1", "16:9"], default="9:16")
     parser.add_argument("--monitor", action="store_true")
@@ -504,6 +506,7 @@ def _render_one_clip(
             reframe_mode=args.reframe_mode,
             zoom_end=None if args.no_zoom else 1.05,
             aspect_ratio=aspect_ratio,
+            letterbox_zoom=normalize_letterbox_zoom(args.letterbox_zoom),
         )
         if not success or not _valid_file(temp_output, 10_000):
             last_report = {

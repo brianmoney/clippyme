@@ -37,6 +37,7 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
   const reframeMode = data.preselections?.reframe_mode;
   const aspect = data.preselections?.aspect;
   const noZoom = data.preselections?.no_zoom === true;
+  const letterboxZoom = Number(data.preselections?.letterbox_zoom) || 0;
   const skipAnalysis = data.preselections?.skip_analysis === true;
   const model = (data.preselections?.model || '').trim();
 
@@ -45,6 +46,7 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
     const jsonBody = { url: data.payload };
     if (data.instructions) jsonBody.instructions = data.instructions;
     if (reframeMode) jsonBody.reframe_mode = reframeMode;
+    if (letterboxZoom) jsonBody.letterbox_zoom = letterboxZoom;
     if (aspect && aspect !== '9:16') jsonBody.aspect = aspect;
     if (language) jsonBody.language = language;
     if (noZoom) jsonBody.no_zoom = true;
@@ -57,6 +59,7 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
     formData.append('file', data.payload);
     if (data.instructions) formData.append('instructions', data.instructions);
     if (reframeMode) formData.append('reframe_mode', reframeMode);
+    if (letterboxZoom) formData.append('letterbox_zoom', String(letterboxZoom));
     if (aspect && aspect !== '9:16') formData.append('aspect', aspect);
     if (language) formData.append('language', language);
     if (noZoom) formData.append('no_zoom', 'true');
@@ -73,6 +76,7 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
 export async function submitBatchJob(data, apiKey, { signal } = {}) {
   const batchBody = { urls: data.urls, instructions: data.instructions };
   if (data.preselections?.reframe_mode) batchBody.reframe_mode = data.preselections.reframe_mode;
+  if (Number(data.preselections?.letterbox_zoom)) batchBody.letterbox_zoom = Number(data.preselections.letterbox_zoom);
   if (data.preselections?.aspect && data.preselections.aspect !== '9:16') batchBody.aspect = data.preselections.aspect;
   const language = pickLanguage(data.preselections);
   if (language) batchBody.language = language;

@@ -386,6 +386,9 @@ export function optsToPreselections(opts) {
     // 'object' is the legacy name for 'subject' (FrameShift face-first); the
     // backend accepts both but normalize here so new jobs persist the new name.
     reframe_mode: (opts.reframeMode === 'object' ? 'subject' : opts.reframeMode) || (opts.reframe === false ? 'disabled' : 'auto'),
+    // Fixed letterbox zoom (percent). Only meaningful with reframe 'disabled';
+    // 0/absent = the whole frame between the black bars.
+    letterbox_zoom: Number(opts.letterboxZoom) || 0,
     aspect: opts.aspect || '9:16',
     language: opts.language,
     no_zoom: !opts.zoom,

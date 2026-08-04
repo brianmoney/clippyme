@@ -311,6 +311,7 @@ async def process_endpoint(
     # already using FastAPI's File/Form dependencies.
     instructions = None
     reframe_mode = None
+    letterbox_zoom = None
     aspect = None
     language = None
     no_zoom = False
@@ -328,6 +329,7 @@ async def process_endpoint(
         url = validated.url
         instructions = validated.instructions
         reframe_mode = validated.reframe_mode
+        letterbox_zoom = validated.letterbox_zoom
         aspect = validated.aspect
         language = validated.language
         no_zoom = bool(validated.no_zoom)
@@ -338,6 +340,7 @@ async def process_endpoint(
     if "multipart/form-data" in content_type:
         form = await request.form()
         reframe_mode = form.get("reframe_mode", reframe_mode)
+        letterbox_zoom = form.get("letterbox_zoom", letterbox_zoom)
         aspect = form.get("aspect", aspect)
         language = form.get("language", language)
         # Also honour the optional instructions field in multipart mode
@@ -354,6 +357,7 @@ async def process_endpoint(
             ProcessRequest.model_validate({
                 "url": "https://upload.invalid/local",
                 "reframe_mode": reframe_mode or None,
+                "letterbox_zoom": letterbox_zoom or None,
                 "aspect": aspect or None,
                 "language": language or None,
                 "instructions": instructions or None,
@@ -416,6 +420,7 @@ async def process_endpoint(
             output_dir=job_output_dir,
             instructions=instructions,
             reframe_mode=reframe_mode,
+            letterbox_zoom=letterbox_zoom,
             aspect=aspect,
             cookies_path=os.path.join("data", "cookies.txt"),
             language=language,
@@ -469,6 +474,7 @@ async def batch_process(req: BatchRequest, request: Request):
                 output_dir=job_output_dir,
                 instructions=req.instructions,
                 reframe_mode=req.reframe_mode,
+                letterbox_zoom=req.letterbox_zoom,
                 aspect=getattr(req, "aspect", None),
                 cookies_path=os.path.join("data", "cookies.txt"),
                 language=getattr(req, "language", None),
@@ -728,6 +734,7 @@ async def reframe_clip(job_id: str, clip_index: int, req: ReframeRequest, reques
     # there are mapped to HTTP responses by the app-level exception handler.
     return await run_reframe(
         job_id=job_id, clip_index=clip_index, mode=mode,
+        letterbox_zoom=req.letterbox_zoom,
         output_root=OUTPUT_DIR, jobs=jobs,
     )
 
