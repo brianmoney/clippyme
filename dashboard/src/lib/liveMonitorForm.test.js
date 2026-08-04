@@ -87,9 +87,11 @@ test('clipSelectionPayload: fixed vs auto, bounds and garbage input', () => {
     clip_selection: 'auto', max_clips: 12, min_viral_score: 85,
   });
   // Unknown selection falls back to fixed; out-of-range values are clamped.
-  assert.deepEqual(clipSelectionPayload('nonsense', 999, 0), {
-    clip_selection: 'fixed', max_clips: 50, min_viral_score: 1,
+  assert.deepEqual(clipSelectionPayload('nonsense', 9999, 0), {
+    clip_selection: 'fixed', max_clips: 1000, min_viral_score: 1,
   });
+  // 0 is "no limit", not an out-of-range count to clamp back up.
+  assert.equal(clipSelectionPayload('fixed', 0, 70).max_clips, 0);
   // A cleared/garbage input keeps the schema defaults instead of 422ing.
   assert.deepEqual(clipSelectionPayload('auto', '', 'x'), {
     clip_selection: 'auto', max_clips: 5, min_viral_score: 70,

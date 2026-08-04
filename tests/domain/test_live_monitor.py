@@ -1366,6 +1366,20 @@ def test_validate_config_malformed_max_clips_uses_default():
     assert cfg["max_clips"] == 5
 
 
+def test_zero_max_clips_survives_as_uncapped(tmp_path):
+    from clippyme.domain.live_monitor import LiveMonitor
+
+    cfg = validate_monitor_config(_base_cfg(max_clips=0))
+    assert cfg["max_clips"] == 0        # 0 = no cap, never clamped back up to 1
+
+    mon = LiveMonitor(id="kick:chan", jobs={}, job_queue=None, output_dir=str(tmp_path))
+    mon._gemini_key = "k"
+    mon.cfg = cfg
+    _, _, env = mon._new_job_dir()
+    # The pipeline reads CLIPPYME_MAX_CLIPS=0 as "keep every clip".
+    assert env["CLIPPYME_MAX_CLIPS"] == "0"
+
+
 def test_validate_config_clip_selection_defaults_and_bounds():
     cfg = validate_monitor_config(_base_cfg())
     assert cfg["clip_selection"] == "fixed" and cfg["min_viral_score"] == 70

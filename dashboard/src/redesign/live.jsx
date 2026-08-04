@@ -175,8 +175,9 @@ function MonitorSettings({ monitor, onApply, applying }) {
         <div style={{ display: 'grid', gridTemplateColumns: clipSelection === 'auto' ? 'repeat(2,1fr)' : '1fr', gap: 8, marginTop: 8 }}>
           <label className="field" style={{ marginBottom: 0 }}>
             <span className="field-label">{clipSelection === 'auto' ? 'Max clips' : 'Clips'}</span>
-            <input className="key-input" type="number" min="1" max="50" aria-label={`Settings clips per segment ${monitor.id}`}
+            <input className="key-input" type="number" min="0" max="1000" aria-label={`Settings clips per segment ${monitor.id}`}
               value={maxClips} onChange={(e) => setMaxClips(e.target.value)} />
+            <div className="od">0 = no limit.</div>
           </label>
           {clipSelection === 'auto' && (
             <label className="field" style={{ marginBottom: 0 }}>
@@ -470,8 +471,9 @@ export function LiveMonitorView({ pushToast }) {
           <div style={{ display: 'grid', gridTemplateColumns: clipSelection === 'auto' ? 'repeat(2,1fr)' : '1fr', gap: 8, marginTop: 8 }}>
             <label className="field" style={{ marginBottom: 0 }}>
               <span className="field-label">{clipSelection === 'auto' ? 'Max clips' : 'Clips'}</span>
-              <input className="key-input" type="number" min="1" max="50" aria-label="Clips per segment"
+              <input className="key-input" type="number" min="0" max="1000" aria-label="Clips per segment"
                 value={maxClips} onChange={(e) => setMaxClips(Number(e.target.value))} />
+              <div className="od">0 = no limit — publish every clip the segment yields.</div>
             </label>
             {clipSelection === 'auto' && (
               <label className="field" style={{ marginBottom: 0 }}>

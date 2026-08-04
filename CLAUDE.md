@@ -48,7 +48,9 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   (`clip_selection: fixed|auto` — `fixed` publishes the top `max_clips` by
   viral_score, `auto` adds a `min_viral_score` floor via
   `CLIPPYME_MIN_VIRAL_SCORE` so a weak segment yields fewer clips or none,
-  with `max_clips` staying the ceiling); per-monitor `smart_cut` (opt-in — adds
+  with `max_clips` staying the ceiling — `max_clips: 0` means NO cap and rides
+  through as `CLIPPYME_MAX_CLIPS=0`, which the orchestrator reads as uncapped);
+  per-monitor `smart_cut` (opt-in — adds
   the `smartcut` toggle to the auto-publish compose recipe) and
   `letterbox_zoom` (monitors always render reframe-`disabled`);
   start-time `catchup: backfill|live_only` (live mode only — VOD processes

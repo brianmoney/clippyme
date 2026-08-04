@@ -389,7 +389,8 @@ class LiveMonitorStartRequest(BaseModel):
     compose: Optional[dict] = None
     catchup: str = Field("backfill", pattern=r"^(backfill|live_only)$")
     delete_after_publish: bool = True
-    max_clips: int = Field(5, ge=1, le=50)
+    # 0 = no cap (publish every clip the segment yields); otherwise the top-N.
+    max_clips: int = Field(5, ge=0, le=1000)
     clip_selection: str = Field("fixed", pattern=r"^(fixed|auto)$")
     min_viral_score: int = Field(70, ge=1, le=100)
     # Burn Smart Cut (silence/filler removal) into every auto-published clip.

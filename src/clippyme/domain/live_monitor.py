@@ -310,9 +310,10 @@ def validate_monitor_config(config: dict, default_timezone: str = "Europe/Rome")
         "delete_after_publish": _validate_bool(
             config.get("delete_after_publish", True), "delete_after_publish"),
         # Max clips kept per segment (top-N by viral_score) — bounds a
-        # publish-limited monitor's output. Clamped to [1, 50], default 5.
-        # In "auto" selection it stays the ceiling, not the target.
-        "max_clips": _clamp_int(config.get("max_clips"), 5, 1, 50),
+        # publish-limited monitor's output. Default 5; 0 = NO cap (every clip
+        # the segment yields gets published). In "auto" selection it stays the
+        # ceiling, not the target.
+        "max_clips": _clamp_int(config.get("max_clips"), 5, 0, 1000),
         # "fixed" always publishes the top max_clips of a segment; "auto" first
         # drops everything under min_viral_score, so a weak segment yields
         # fewer clips (or none) instead of padding the quota with filler.
@@ -1145,7 +1146,10 @@ class LiveMonitor:
         env["GEMINI_API_KEY"] = self._gemini_key
         # Bound each segment's clip count for the publish-limited monitor —
         # the pipeline keeps the top-N by viral_score (get_viral_clips).
-        env["CLIPPYME_MAX_CLIPS"] = str(self.cfg.get("max_clips") or 5)
+        # `or 5` would turn a deliberate 0 back into 5 — 0 is the "no cap"
+        # value, and the pipeline already reads CLIPPYME_MAX_CLIPS=0 as uncapped.
+        configured_max = self.cfg.get("max_clips")
+        env["CLIPPYME_MAX_CLIPS"] = str(5 if configured_max is None else int(configured_max))
         # The channel is the stream owner: the prompt may use it as the SUBJECT
         # of a title ("<creator> ha trovato…") — never to attribute a quote to
         # them (SPEAKER ATTRIBUTION RULE still applies, guests exist).
