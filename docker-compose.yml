@@ -39,6 +39,12 @@ services:
       # model downloads without rate limits. Both names are accepted.
       - HF_TOKEN=${HF_TOKEN:-}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-${HF_TOKEN:-}}
+      # HF model cache (faster-whisper, pyannote). Defaults to ~/.cache which
+      # resolves to the bind-mounted /app (not appuser-writable) — point it at
+      # the persisted, appuser-owned data/ dir instead. Hardcoded (not
+      # ${HF_HOME:-}) so a host-shell HF_HOME export can't leak an unmounted
+      # host path into the container.
+      - HF_HOME=/app/data/hf-cache
       # ASR provider + credentials. TRANSCRIPTION_PROVIDER=deepgram|elevenlabs|whisper.
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-deepgram}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
@@ -127,6 +133,10 @@ services:
       # for a deliberate LAN deployment: every API request must then carry
       # X-API-Token (the dashboard has a Settings field for it).
       - CLIPPYME_API_TOKEN=${CLIPPYME_API_TOKEN:-}
+      # Browser Origin allow-list for config/state endpoints. Defaults to
+      # localhost-only when unset; add your LAN address(es) when the dashboard
+      # is exposed beyond loopback (CLIPPYME_BIND=0.0.0.0).
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
     volumes:
       - .:/app
       - /app/__pycache__
