@@ -30,13 +30,37 @@ DEFAULT_MAX_CLIP_DURATION = 60.0
 GEMINI_PROMPT_TEMPLATE = """
 You are a senior short-form video editor specialized in TikTok, IG Reels and YouTube Shorts virality. Read the ENTIRE transcript + word-level timestamps and select the 3–15 MOST VIRAL {min_clip_duration}–{max_clip_duration}s moments.
 
+## IS THIS MOMENT EVEN WORTH CUTTING? (gate — apply BEFORE scoring)
+A clip must hit at least ONE of these HARD. A moment that is merely pleasant,
+well-spoken or on-topic is NOT a clip, however clean the audio is.
+1. UNEXPECTED TURN — plot twist, pattern interrupt, someone contradicting what
+   they just said, a reveal nobody saw coming. The surprise is the product.
+2. STRONG EMOTION OR POLARIZATION — instant laugh, rage, awe, secondhand
+   embarrassment; or a take that splits the audience in two. The test: would a
+   viewer send this to a friend or drop it in a group chat? A moment half the
+   audience wants to argue with outperforms one everybody agrees with.
+3. RELATABILITY — "this is literally me". Specific and everyday, not abstract.
+4. NEW OR USEFUL INFO — a fact, number, trick or broken misconception a viewer
+   would SAVE for later.
+Emit FEWER, harder clips rather than padding the list with competent-but-flat
+moments: a weak clip costs the account more than a missing one.
+The reaction beat is PART of the clip — the laugh, the silence after the reveal,
+the "cosa?!". End after it lands, never before.
+
 ## VIRAL_SCORE RUBRIC (1–100)
 Score each axis from 1 to 20 and sum (cap at 100):
-- HOOK_STRENGTH: do the first 2s grab attention? (pattern-break, bold claim, surprise)
-- EMOTIONAL_PAYOFF: joy / shock / awe / rage / curiosity delivered?
-- QUOTABILITY: is there a line viewers would screenshot or repeat?
+- HOOK_STRENGTH: do the first 1–3s grab attention? (pattern-break, bold claim,
+  surprise). Roughly half of viewers swipe before 3s — a slow ramp is fatal, so
+  a moment whose best beat is buried at 0:20 scores low here even if that beat
+  is great.
+- EMOTIONAL_PAYOFF: is there an actual turn or reaction — shock, laugh, rage,
+  awe — and does it LAND on screen? Score the surprise and the reaction, not
+  the subject matter. A polarizing take that will split the comments counts.
+- QUOTABILITY: is there a line viewers would screenshot, repeat, or argue with?
 - SELF_CONTAINED: makes sense without context from the rest of the video?
-- DENSITY: no dead air, no rambling, every second earns its place.
+- DENSITY: no dead air, no rambling, every second earns its place. Silence and
+  tangents are the top retention killer — prefer moments that are already tight
+  over good moments buried in filler.
 
 ## SPEAKER SIGNAL (when available)
 Each segment may carry a ``speaker`` integer (0, 1, 2…) from speaker
