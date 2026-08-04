@@ -77,6 +77,8 @@ normally on the words alone.
     * Direct question: "E se fosse tutto falso?", "What if you're wrong?"
     * Number / stakes: "3 cose che nessuno dice", "3 things nobody tells you"
     * Warning / callout: "Non guardare se…", "Stop scrolling if…"
+    * Stakes / consequence: "Dopo questo può smettere", "This ends his career"
+    * Prediction bait: "Indovina quanto vale", "Guess the number"
   The hook must TEASE the content of the clip without spoiling the payoff. Same language as the transcript. Title Case or Sentence case, never ALL CAPS.
 - No generic intros/outros or pure sponsorship unless they ARE the hook
 
@@ -93,8 +95,90 @@ instructions does NOT count as evidence of who is speaking. When the speaker is
 not named in the clip, use a generic reference instead (e.g. "un concorrente",
 "uno di loro", "in villa", "chi parla") — never guess. A wrong name is far worse
 than no name.
+ONE EXCEPTION: when a CHANNEL OWNER is given in VIDEO METADATA, that name may be
+the SUBJECT of a title/hook (whose stream this is, what happened on it) — but
+still never the source of a specific quote or opinion unless it is spoken in the
+clip. "<owner> trova un pezzo da 10k" is fine; "<owner>: 'non ci credo'" is not,
+because the voice may belong to a guest.
+
+## TITLE & CAPTION COPY (this is where clips win or die)
+A title is NOT a summary of the clip. It is bait: its only job is to make
+someone stop, watch, and COMMENT. Flat descriptive titles ("Trova una moneta
+rara") are a failure even when the clip is great.
+
+Write video_title_for_youtube_short and both descriptions with these rules:
+
+1. PLAY UP THE STAKES. Take what actually happens and frame it at its most
+   dramatic, most absurd or most consequential reading. A rare coin is not "a
+   coin" — it is "il pezzo che ripaga un anno di stream".
+2. SPECULATE OUT LOUD. A consequence that does not happen in the clip is
+   allowed ONLY as open speculation, never as a statement of fact — use a
+   conditional, a question, or a "dopo questo…" framing:
+     OK:  "Dopo un cimelio da 10k, <creator> smette di fare live?"
+     OK:  "Con questo pezzo può chiudere lo stream e andare in pensione"
+     NO:  "<creator> ha annunciato che smette" ← invented fact = a lie
+3. BAIT THE COMMENTS IMPLICITLY. At least one of the three text fields must
+   give the viewer something to reply to: an opinion that splits the audience,
+   a debatable valuation, a genuine question, a "ditemi che sbaglio", a guess
+   invited before the reveal. NEVER use mechanical engagement bait — "commenta
+   X e ti mando…", "metti like se sei d'accordo", "seguimi e ti seguo", "solo
+   il 10% ci riesce". Those are demoted/feed-ineligible by TikTok and Meta
+   policy; an honest ask for an opinion is explicitly allowed.
+4. LEAVE THE LOOP OPEN. Name the object/number/reaction, never the outcome —
+   the payoff must be watched, not read.
+5. CONCRETE > VAGUE. Real numbers, real objects, real amounts beat adjectives.
+   "10k" beats "tantissimo". If a number is said in the clip, use it.
+6. GROUNDING RULE (hard): every element of a title must be traceable to
+   something that actually happens or is actually said in THAT clip — the
+   object, the number, the reaction. Exaggerate the FRAMING, never invent the
+   EVENT. The test platforms apply is delivery: a viewer who clicks must get
+   what the title promised. A title promising something the clip does not
+   contain is misleading metadata and gets the account penalised.
+7. STACK EXACTLY TWO triggers per title (e.g. stakes + open loop). One is
+   flat, three reads as spam.
+8. Register: spoken streamer talk, informal second person (in Italian always
+   "tu"/"voi", never "lei" — and "voi" is what pulls replies). Sentence case
+   or lowercase, CAPS on at most one or two words for emphasis, never the
+   whole line, at most one emoji. No "non crederai mai", no emoji walls, no
+   hashtag spam, no machine-translated English templates. Sound like a viewer
+   in chat, not like a newspaper headline.
+9. NAME PLACEMENT: lead with the creator's name only when it is the draw;
+   otherwise lead with the moment and put the name second. Use the handle the
+   audience actually uses, never a legal name.
+
+Title patterns that work (rotate them — the same template every clip burns
+credibility fast):
+  * Consequence bait:   "Dopo questo <creator> può smettere di streammare"
+  * Valuation debate:   "Quanto pensate valga? Io dico 10k"
+  * Underreaction:      "Trova un pezzo da 10k e reagisce così"
+  * Ratio / stakes:     "1 euro speso, 10.000 trovati"
+  * Near-emotion:       "Ha quasi pianto quando ha capito cos'era"
+  * Prediction bait:    "Indovinate quanto vale prima che lo dica"
+  * Second-person POV:  "POV: apri la scatola e c'è quello"
+  * Split opinion:      "Lo venderei subito. Voi no, lo so"
+  * Open question:      "Secondo voi è vero o è finto?"
+  * Chat as antagonist: "La chat gli ha detto di venderlo. Aveva ragione?"
+  * Withheld reveal:    "Non riusciva più a parlare. Guardate perché"
+  * Streak / number:    "Il terzo colpo di fila, e nessuno ne parla"
+  * Understatement:     "10.000 euro e ha detto solo 'ok'"
+
+A deliberately debatable ANGLE (a valuation you call too low, a choice you
+call wrong) is the strongest comment driver — people correct a claim far more
+readily than they answer a question. Keep it to a judgement call, opinion or
+easily-corrected detail. NEVER misstate a fact about a real person, health,
+money-making or news: that is misinformation, not bait.
 
 ## FEW-SHOT EXAMPLES
+GOOD TITLES (engagement-first, grounded in what the clip shows):
+  clip: the streamer digs up a collectible and says it is worth about 10k
+  video_title_for_youtube_short="Dopo un cimelio da 10k può anche smettere di fare live"   ← speculative consequence, not stated as fact
+  video_title_for_youtube_short="Ne ha trovato uno da 10.000 euro e fa finta di niente"    ← underreaction + number
+  video_title_for_youtube_short="Voi lo vendereste? Io manco per idea"                     ← splits the comments
+BAD TITLES:
+  "Il momento in cui trova la moneta"     ← summary, no bait, no reason to comment
+  "NON CREDERAI MAI A COSA TROVA 😱😱"    ← caps + generic clickbait, zero information
+  "Ha annunciato che chiude il canale"    ← invented fact, contradicts the clip
+
 GOOD (score 87):
   start=12.340 end=37.900
   viral_reason="Opens with 'Everyone lies about this' — pattern-break hook, then delivers a counter-intuitive reveal with a clean payoff line at 34s viewers will quote."
@@ -115,6 +199,7 @@ BAD (would score ~30 — DO NOT emit anything like this):
 
 ## VIDEO METADATA
 VIDEO_DURATION_SECONDS: {video_duration}
+{creator_block}
 
 TRANSCRIPT_TEXT (raw):
 {transcript_text}
@@ -134,7 +219,11 @@ JSON formatting rules (violating = parse failure):
 - Use straight double quotes " only — NO curly/smart quotes
 - No trailing commas before }} or ]
 - Strings stay on a single line (no raw \\n mid-string)
-- In the descriptions, ALWAYS include a CTA like "Follow me and comment X and I'll send you the workflow"
+- Every description ENDS with a conversation opener: a genuine question or a
+  debatable opinion about what just happened ("Voi l'avreste venduto?", "Per me
+  ha sbagliato, ditemi che sbaglio"). Never a mechanical CTA ("commenta X e ti
+  mando…", "metti like se…", "seguimi e ti seguo") — that is engagement bait and
+  costs the clip its feed eligibility.
 
 Output schema:
 ### JSON ###
@@ -145,9 +234,9 @@ Output schema:
       "end": 37.900,
       "viral_score": 87,
       "viral_reason": "<>=20 chars, cite specific hook/payoff/quote, same language as transcript>",
-      "video_description_for_tiktok": "<TikTok description with CTA>",
-      "video_description_for_instagram": "<Instagram description with CTA>",
-      "video_title_for_youtube_short": "<max 100 chars>",
+      "video_description_for_tiktok": "<TikTok description, ends with a genuine question or a debatable opinion — never mechanical engagement bait>",
+      "video_description_for_instagram": "<Instagram description, ends with a genuine question or a debatable opinion — never mechanical engagement bait>",
+      "video_title_for_youtube_short": "<max 100 chars, engagement-first bait per TITLE & CAPTION COPY — stakes/speculation/comment trigger, grounded in the clip, never a flat summary>",
       "viral_hook_text": "<REQUIRED, 3-8 words, scroll-stopping overlay copy — NOT a transcript quote. Use curiosity gap, POV, counter-claim, question, number, or warning pattern. Same language as transcript.>"
     }}
   ]
@@ -209,11 +298,16 @@ def encode_words_toon(words):
     return "\n".join(lines)
 
 
-def build_viral_prompt(transcript_result, video_duration, instructions=None):
+def build_viral_prompt(transcript_result, video_duration, instructions=None, creator=None):
     """Return ``(prompt, words)`` for the primary Gemini call.
 
     ``words`` is also what ``gemini_parser.backfill_hook_text`` needs later,
     so it is returned alongside instead of being recomputed.
+
+    ``creator`` is the stream owner's channel name (live monitor only): it lets
+    titles name the subject of the clip. It is NOT evidence of who is speaking
+    — the speaker-attribution rule in the template still forbids putting a
+    quote in a named mouth.
     """
     words = extract_prompt_words(transcript_result)
 
@@ -232,11 +326,23 @@ def build_viral_prompt(transcript_result, video_duration, instructions=None):
             "</user_instructions>"
         )
 
+    creator_block = ""
+    safe_creator = str(creator or "").replace("### JSON ###", "").strip()[:64]
+    if safe_creator:
+        creator_block = (
+            f"CHANNEL OWNER: {safe_creator} — this clip comes from their stream. "
+            f"You MAY use \"{safe_creator}\" as the SUBJECT of a title/hook "
+            "(what happened on their stream). You may NOT put words, opinions "
+            "or reactions in their mouth unless that name is spoken in the "
+            "clip: guests and co-streamers exist (see SPEAKER ATTRIBUTION RULE)."
+        )
+
     prompt = GEMINI_PROMPT_TEMPLATE.format(
         video_duration=video_duration,
         transcript_text=json.dumps(transcript_result.get('text', '')),
         words_toon=encode_words_toon(words),
         user_instructions_block=user_instructions_block,
+        creator_block=creator_block,
     )
     return prompt, words
 

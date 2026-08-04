@@ -190,6 +190,7 @@ Runtime env overrides (rarely needed):
 | `CLIPPYME_MAX_ESTIMATED_COST_USD` | _(disabled)_ | Reject a job whose estimated Gemini spend exceeds this. Conservative estimate, not a billing promise. |
 | `CLIPPYME_MIN_FREE_DISK_GB` | `1` | Free space that must still remain after the estimated peak disk use. |
 | `CLIPPYME_MAX_CLIPS` | _(disabled)_ | Cap how many ranked candidates are actually rendered. |
+| `CLIPPYME_CREATOR_NAME` | _(unset)_ | Channel owner passed to the Gemini prompt so titles can name whose stream the clip is from. Set per-job by the Live Monitor; never used to attribute a quote. |
 | `CLIPPYME_MIN_VIRAL_SCORE` | _(disabled)_ | Drop clips scoring below this (1–100) before the cap — the clip count then follows the material (a weak segment can yield zero clips). Set by the Live Monitor's "Automatic" clip selection. |
 | `CLIPPYME_QA_SIGNAL` | `1` | `0` runs structural output QA only (skips black/freeze/loudness probes) on constrained hosts. |
 

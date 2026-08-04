@@ -74,6 +74,10 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   `run_ops.py` (pure entrypoint helpers: `resolve_output_dir`,
   `build_cut_command`), `gemini_request.py` (prompt template + pricing +
   prompt/cost/retry-classification — the pure half of `get_viral_clips`; the
+  prompt's `TITLE & CAPTION COPY` section is engagement-first by design
+  (see `docs/title-hook-copy-research.md`) — never reintroduce a mechanical
+  CTA there, and `CLIPPYME_CREATOR_NAME` names the clip's subject without
+  ever overriding the speaker-attribution rule; the
   per-word payload is TOON-encoded (`encode_words_toon`, ~50% smaller than
   JSON) while the response contract stays JSON),
   `media_probe.py` (ffprobe + silencedetect wrappers), `texttiling_ops.py`
@@ -284,5 +288,9 @@ injection).
   measured A/B numbers.
 - `docs/runtime-quality.md` — the durable job lifecycle, retry/preflight/QA
   env knobs and the regression quality-suite manifest format.
+- `docs/title-hook-copy-research.md` — why the Gemini prompt writes
+  engagement-first titles the way it does (platform clickbait/engagement-bait
+  policy boundary, comment-driver research, Italian register), and why the
+  mechanical-CTA instruction was removed.
 - `docs/architecture-history.md` — summary of major refactors (what moved
   where and why); the pre-rewrite CLAUDE.md is in git history.
