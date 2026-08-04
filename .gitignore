@@ -69,3 +69,7 @@ fonts/NotoColorEmoji.ttf
 
 # Isolated feature worktrees
 .worktrees/
+
+# Local machine override (docker compose auto-loads it) + agent workspace
+docker-compose.override.yml
+.serena/
