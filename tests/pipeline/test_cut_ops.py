@@ -279,6 +279,7 @@ def test_predict_polish_saving_edge_cases():
 from clippyme.pipeline.cut_ops import (  # noqa: E402
     compute_neighbor_bounds,
     snap_clips_to_transcript,
+    _enforce_min_duration,
 )
 
 _WORDS = [
@@ -356,3 +357,84 @@ def test_snap_clips_neighbor_clamp_prevents_overlap():
     ]
     snap_clips_to_transcript(shorts, _WORDS, source_duration=60.0)
     assert shorts[1]["end"] <= 5.1
+
+
+# --- min-duration floor (_enforce_min_duration) -----------------------------
+
+def test_enforce_min_noop_when_already_long_enough():
+    # Already over the floor → edges untouched.
+    assert _enforce_min_duration(10.0, 70.0, min_duration=60.0) == (10.0, 70.0)
+    # min=0 / falsy → disabled.
+    assert _enforce_min_duration(10.0, 20.0, min_duration=0.0) == (10.0, 20.0)
+
+
+def test_enforce_min_grows_end_to_next_sentence():
+    # _WORDS sentences end at 0.9 and 5.9 (plus 0.08 post_pad). A 0.7s clip with
+    # a 2s floor must extend its END to the 5.9 sentence (span ~5.88), not stop
+    # at the first sentence which is still too short.
+    s, e = _enforce_min_duration(
+        0.1, 0.8, min_duration=2.0,
+        onsets=[0.0, 5.0], finals=[0.9, 5.9],
+        source_duration=60.0, max_duration=60.0,
+    )
+    assert abs(s - 0.1) < 1e-6
+    assert abs(e - (5.9 + 0.08)) < 1e-6
+    assert (e - s) >= 2.0
+
+
+def test_enforce_min_pulls_start_back_when_end_bounded():
+    # The end is hard-blocked by the next clip (neighbor_start=12.0) and no
+    # earlier sentence onset reaches the floor, so the START is pulled back to
+    # satisfy the 3s floor instead.
+    s, e = _enforce_min_duration(
+        10.5, 11.0, min_duration=3.0,
+        onsets=[10.0, 20.0], finals=[12.0, 22.0],
+        neighbor_start=12.0, source_duration=60.0, max_duration=60.0,
+    )
+    assert abs(e - 12.0) < 1e-6
+    assert abs(s - 9.0) < 1e-6
+    assert (e - s) >= 3.0
+
+
+def test_enforce_min_raw_growth_fallback():
+    # No sentence boundary can satisfy the floor → raw growth (end first), still
+    # bounded by the source duration.
+    s, e = _enforce_min_duration(
+        5.0, 7.0, min_duration=10.0,
+        onsets=[0.0, 5.0], finals=[0.9, 5.9],
+        source_duration=12.0, max_duration=100.0,
+    )
+    # End can only reach source_duration (12); start pulls back to meet 10s.
+    assert abs(e - 12.0) < 1e-6
+    assert (e - s) >= 10.0
+
+
+def test_snap_min_duration_grows_short_clip_in_place():
+    shorts = [{"start": 0.1, "end": 0.8}]
+    events = snap_clips_to_transcript(
+        shorts, _WORDS, source_duration=60.0, min_duration=2.0)
+    assert len(events) == 1
+    assert (shorts[0]["end"] - shorts[0]["start"]) >= 2.0
+    assert abs(shorts[0]["end"] - (5.9 + 0.08)) < 1e-6  # snapped to sentence end
+    assert "+min" in events[0].path
+
+
+def test_snap_min_duration_respects_neighbor_bound():
+    # A short earlier clip must not swallow the later clip: growth stops at the
+    # neighbour's raw start (5.1), and it still reaches the 2s floor.
+    shorts = [
+        {"start": 5.1, "end": 5.7},
+        {"start": 0.1, "end": 0.8},
+    ]
+    snap_clips_to_transcript(
+        shorts, _WORDS, source_duration=60.0, min_duration=2.0)
+    assert shorts[1]["end"] <= 5.1
+    assert (shorts[1]["end"] - shorts[1]["start"]) >= 2.0
+
+
+def test_snap_min_duration_off_is_unchanged():
+    shorts = [{"start": 0.1, "end": 0.8}]
+    snap_clips_to_transcript(
+        shorts, _WORDS, source_duration=60.0, min_duration=0.0)
+    # Default 15-60s window: the sentence-snap keeps it on the first sentence.
+    assert shorts[0]["end"] < 5.0

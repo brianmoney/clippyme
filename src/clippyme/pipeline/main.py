@@ -400,7 +400,7 @@ def transcribe_video(video_path):
                 except OSError:
                     pass
 
-def get_viral_clips(transcript_result, video_duration, instructions=None):
+def get_viral_clips(transcript_result, video_duration, instructions=None, min_duration=None):
     print("🤖  Analyzing with Gemini...")
     get_viral_clips._last_gemini_exhausted = False
 
@@ -422,7 +422,9 @@ def get_viral_clips(transcript_result, video_duration, instructions=None):
 
     # Prompt building (word flattening, untrusted-instructions fencing,
     # template fill) is pure — it lives in gemini_request, host-tested.
-    prompt, words = build_viral_prompt(transcript_result, video_duration, instructions)
+    prompt, words = build_viral_prompt(
+        transcript_result, video_duration, instructions, min_duration=min_duration
+    )
 
     if not words:
         print("⏭️  Empty transcript (no words) — skipping Gemini, no clips.")

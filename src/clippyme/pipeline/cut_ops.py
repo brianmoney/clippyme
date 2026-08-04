@@ -379,6 +379,86 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _enforce_min_duration(
+    start: float,
+    end: float,
+    *,
+    min_duration: float = 0.0,
+    onsets: list[float] = (),
+    finals: list[float] = (),
+    pre_pad: float = DEFAULT_PRE_PAD,
+    post_pad: float = DEFAULT_POST_PAD,
+    neighbor_start: float | None = None,
+    neighbor_end: float | None = None,
+    source_duration: float | None = None,
+    max_duration: float = DEFAULT_MAX_CLIP_DURATION,
+) -> tuple[float, float]:
+    """Grow a snapped clip to at least ``min_duration`` seconds.
+
+    Called after word/sentence/silence snapping when the result is still too
+    short (the requested floor is a hard guarantee the transcript must meet).
+    Prefers sentence boundaries so a longer clip never opens/closes mid-
+    sentence: first the END is pushed to the next sentence-final word, then the
+    START is pulled back to a prior sentence onset. If no single boundary move
+    reaches the floor, it falls back to a raw growth (end forward, then start
+    backward), always bounded by the next/previous clip, the source duration and
+    ``max_duration``. Returns ``(new_start, new_end)``; identical to the input
+    when no growth is possible or needed.
+    """
+    if not min_duration or min_duration <= 0:
+        return start, end
+    if (end - start) >= min_duration:
+        return start, end
+
+    # 1. End forward to the earliest sentence-final that reaches the floor.
+    if finals:
+        for f in finals:
+            e = f + post_pad
+            if e <= end:
+                continue
+            if neighbor_start is not None and e > neighbor_start:
+                continue
+            if source_duration is not None and e > float(source_duration):
+                continue
+            if e - start > max_duration:
+                break  # any later final is also over the cap
+            if e - start >= min_duration:
+                return start, e
+
+    # 2. Start backward to the latest sentence onset that reaches the floor.
+    if onsets:
+        for o in reversed(onsets):
+            s = o - pre_pad
+            if s >= start:
+                continue
+            if neighbor_end is not None and s < neighbor_end:
+                continue
+            if s < 0:
+                continue
+            span = end - s
+            if span > max_duration:
+                break  # this and every earlier onset also exceed the cap
+            if span >= min_duration:
+                return s, end
+            # Too short — earlier onsets only lengthen the span; keep scanning.
+
+    # 3. Raw growth, still bounded by neighbours / source / duration cap.
+    end_hi = float("inf")
+    if neighbor_start is not None:
+        end_hi = min(end_hi, neighbor_start)
+    if source_duration is not None:
+        end_hi = min(end_hi, float(source_duration))
+    end_hi = min(end_hi, start + max_duration)
+    new_end = min(max(end, start + min_duration), end_hi)
+    if new_end - start >= min_duration:
+        return start, new_end
+    new_start = max(0.0, new_end - min_duration)
+    if neighbor_end is not None:
+        new_start = max(new_start, neighbor_end)
+    new_start = min(start, new_start)
+    return new_start, new_end
+
+
 def refine_edges_to_silence(
     start: float,
     end: float,
@@ -556,15 +636,22 @@ def compute_neighbor_bounds(raw_intervals, idx):
 
 
 def snap_clips_to_transcript(shorts, words, *, source_duration=None,
-                             silences=None, default_reframe_mode="auto"):
+                             silences=None, default_reframe_mode="auto",
+                             min_duration: float = 0.0):
     """Three-stage edge repair for every clip, in place.
 
     Per clip: word-snap (never open/close mid-word) → sentence-snap (never
     mid-sentence; forward extension clamped by duration cap and time-adjacent
     neighbours) → optional waveform-silence refine when ``silences`` is
-    non-empty. Also ``setdefault``s ``reframe_mode`` on every entry (the
-    dashboard reads it per clip). Entries without word timing or start/end
-    keys keep their edges untouched.
+    non-empty → optional hard min-duration floor (grows a still-too-short clip,
+    preferring sentence boundaries). Also ``setdefault``s ``reframe_mode`` on
+    every entry (the dashboard reads it per clip). Entries without word timing
+    or start/end keys keep their edges untouched.
+
+    ``min_duration`` (seconds, 0 = off) is a hard floor: a clip shorter than it
+    is extended up to the nearest time-adjacent clip / source boundary. The
+    duration cap tracks it (max(60s, min+30s)) so a raised floor never makes a
+    clip unsnap-able.
 
     Returns the list of :class:`SnapEvent` for clips whose edges moved.
     """
@@ -574,6 +661,16 @@ def snap_clips_to_transcript(shorts, words, *, source_duration=None,
             raw_intervals.append((float(clip["start"]), float(clip["end"])))
         except (KeyError, TypeError, ValueError):
             raw_intervals.append(None)
+
+    # Sentence boundaries for the min-floor growth (kept when the transcript is
+    # punctuated; a no-punctuation path mirrors snap_clip_to_sentences and
+    # degrades to raw growth).
+    onsets, finals = sentence_boundaries(words) if words else ([], [])
+    if not finals:
+        onsets = []
+    eff_max = DEFAULT_MAX_CLIP_DURATION
+    if min_duration and min_duration > 0:
+        eff_max = max(eff_max, float(min_duration) + 30.0)
 
     events = []
     for idx, clip in enumerate(shorts):
@@ -590,6 +687,7 @@ def snap_clips_to_transcript(shorts, words, *, source_duration=None,
             word_start=word_start, word_end=word_end,
             source_duration=source_duration,
             neighbor_start=neighbor_start, neighbor_end=neighbor_end,
+            max_duration=eff_max,
         )
         if silences:
             new_start, new_end, silence_path = refine_edges_to_silence(
@@ -599,6 +697,17 @@ def snap_clips_to_transcript(shorts, words, *, source_duration=None,
             )
             if silence_path != "none":
                 path = f"{path}+{silence_path}"
+        if min_duration and min_duration > 0:
+            min_start, min_end = _enforce_min_duration(
+                new_start, new_end,
+                min_duration=min_duration,
+                onsets=onsets, finals=finals,
+                neighbor_start=neighbor_start, neighbor_end=neighbor_end,
+                source_duration=source_duration, max_duration=eff_max,
+            )
+            if (min_start, min_end) != (new_start, new_end):
+                new_start, new_end = min_start, min_end
+                path = f"{path}+min" if path != "none" else "min"
         if (new_start, new_end) != (raw_start, raw_end):
             clip["start"] = new_start
             clip["end"] = new_end

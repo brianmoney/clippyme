@@ -92,6 +92,9 @@ class ProcessRequest(BaseModel):
     model: Optional[str] = Field(
         None, max_length=72, pattern=r"^gemini-[A-Za-z0-9.\-]{1,64}$"
     )
+    # Hard floor on every produced clip's length (seconds). 0/unset keeps the
+    # default 15-60s prompt window; e.g. 60 asks for and enforces 60s+ clips.
+    min_duration: Optional[float] = Field(None, gt=0, le=300)
 
     @field_validator("url")
     @classmethod
@@ -117,6 +120,7 @@ class BatchRequest(BaseModel):
     model: Optional[str] = Field(
         None, max_length=72, pattern=r"^gemini-[A-Za-z0-9.\-]{1,64}$"
     )
+    min_duration: Optional[float] = Field(None, gt=0, le=300)
 
     @field_validator("urls")
     @classmethod

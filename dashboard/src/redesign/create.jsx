@@ -315,6 +315,15 @@ function OptionsPanel({ opts, set }) {
       <OptRow icon="zoom-in" label="Subtle zoom" desc="Gentle Ken Burns motion (1.0→1.05x)"
         on={opts.zoom} set={(v) => set({ zoom: v })} />
       <div className="opt">
+        <div className="oico"><Icon n="clock" /></div>
+        <div className="otxt" style={{ flex: 1 }}>
+          <div className="ot">Min clip length</div>
+          <div className="od">Hard floor on every clip · longer moments, e.g. 60s for long-form deep dives</div>
+        </div>
+        <div className="r"><Segmented value={opts.minDuration} onChange={(id) => set({ minDuration: id })}
+          options={[{ id: 0, label: 'Off' }, { id: 30, label: '30s' }, { id: 45, label: '45s' }, { id: 60, label: '60s' }, { id: 90, label: '90s' }]} /></div>
+      </div>
+      <div className="opt">
         <div className="oico"><Icon n="languages" /></div>
         <div className="otxt" style={{ flex: 1 }}><div className="ot">Spoken language</div><div className="od">Single language boosts accuracy</div></div>
         <div className="r" style={{ flex: '0 0 184px' }}>
@@ -354,6 +363,7 @@ function SummaryBar({ opts, ready, count, onCreate, error }) {
     opts.detect ? 'viral detect' : 'whole video',
     (() => { const m = opts.reframeMode || (opts.reframe === false ? 'disabled' : 'auto'); return (m === 'subject' || m === 'object') ? 'subject crop' : m === 'disabled' ? 'letterbox' : 'reframe'; })(),
     opts.smartcut && 'smart-cut',
+    opts.minDuration ? `${opts.minDuration}s min clips` : '',
     opts.subtitles && (opts.subMode + ' subs'),
     opts.hooks && 'hooks',
   ].filter(Boolean);

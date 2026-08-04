@@ -390,6 +390,8 @@ export function optsToPreselections(opts) {
     language: opts.language,
     no_zoom: !opts.zoom,
     skip_analysis: !opts.detect,
+    // Hard per-clip min-length floor (0 = off → default 15-60s window).
+    min_duration: opts.minDuration ? Number(opts.minDuration) : undefined,
     smartcut: opts.smartcut,
     // Per-job Gemini model override (quick-picker). Omitted when blank →
     // lib/api.js skips the field and the backend uses the Settings default.

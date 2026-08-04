@@ -20,8 +20,15 @@ MODEL_PRICING = {
     "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
 }
 
+# Default clip-length window the viral prompt asks for. The minimum is
+# overridable per job (Create → "Min clip length"); when raised, the max is
+# nudged up alongside it (min+30s) so the requested range never degenerates to
+# a single point.
+DEFAULT_MIN_CLIP_DURATION = 15.0
+DEFAULT_MAX_CLIP_DURATION = 60.0
+
 GEMINI_PROMPT_TEMPLATE = """
-You are a senior short-form video editor specialized in TikTok, IG Reels and YouTube Shorts virality. Read the ENTIRE transcript + word-level timestamps and select the 3–15 MOST VIRAL 15–60s moments.
+You are a senior short-form video editor specialized in TikTok, IG Reels and YouTube Shorts virality. Read the ENTIRE transcript + word-level timestamps and select the 3–15 MOST VIRAL {min_clip_duration}–{max_clip_duration}s moments.
 
 ## VIRAL_SCORE RUBRIC (1–100)
 Score each axis from 1 to 20 and sum (cap at 100):
@@ -55,7 +62,7 @@ Absence of these markers means the provider didn't tag audio events; score
 normally on the words alone.
 
 ## HARD CONSTRAINTS (violating = clip REJECTED)
-- 15s ≤ duration ≤ 60s
+- {min_clip_duration}s ≤ duration ≤ {max_clip_duration}s
 - start on a complete sentence boundary; end on a natural beat
 - no cold-open ambiguity ("...and then she said" with no setup)
 - 0 ≤ start < end ≤ VIDEO_DURATION_SECONDS
@@ -209,13 +216,40 @@ def encode_words_toon(words):
     return "\n".join(lines)
 
 
-def build_viral_prompt(transcript_result, video_duration, instructions=None):
+def build_viral_prompt(transcript_result, video_duration, instructions=None,
+                       min_duration=None, max_duration=None):
     """Return ``(prompt, words)`` for the primary Gemini call.
 
     ``words`` is also what ``gemini_parser.backfill_hook_text`` needs later,
     so it is returned alongside instead of being recomputed.
+
+    ``min_duration`` raises the requested floor (e.g. 60 for long-form clips);
+    the max follows it (min+30s, never below 60s) unless ``max_duration`` is
+    given explicitly.
     """
     words = extract_prompt_words(transcript_result)
+
+    min_d = DEFAULT_MIN_CLIP_DURATION
+    if min_duration is not None:
+        try:
+            min_d = float(min_duration)
+        except (TypeError, ValueError):
+            min_d = DEFAULT_MIN_CLIP_DURATION
+    max_d = DEFAULT_MAX_CLIP_DURATION
+    if max_duration is not None:
+        try:
+            max_d = float(max_duration)
+        except (TypeError, ValueError):
+            max_d = DEFAULT_MAX_CLIP_DURATION
+    max_d = max(max_d, min_d + 30.0)
+    if min_d >= max_d:
+        max_d = min_d + 30.0
+
+    def _fmt_duration(value: float) -> str:
+        """Render a whole-number duration without a trailing '.0'."""
+        return str(int(value)) if float(value).is_integer() else str(value)
+    min_label = _fmt_duration(min_d)
+    max_label = _fmt_duration(max_d)
 
     user_instructions_block = ""
     if instructions:
@@ -234,6 +268,8 @@ def build_viral_prompt(transcript_result, video_duration, instructions=None):
 
     prompt = GEMINI_PROMPT_TEMPLATE.format(
         video_duration=video_duration,
+        min_clip_duration=min_label,
+        max_clip_duration=max_label,
         transcript_text=json.dumps(transcript_result.get('text', '')),
         words_toon=encode_words_toon(words),
         user_instructions_block=user_instructions_block,

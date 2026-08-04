@@ -316,6 +316,7 @@ async def process_endpoint(
     no_zoom = False
     skip_analysis = False
     model = None
+    min_duration = None
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
@@ -333,6 +334,7 @@ async def process_endpoint(
         no_zoom = bool(validated.no_zoom)
         skip_analysis = bool(validated.skip_analysis)
         model = validated.model
+        min_duration = validated.min_duration
 
     # For multipart/form-data uploads, extract reframe_mode + language from form fields
     if "multipart/form-data" in content_type:
@@ -347,6 +349,13 @@ async def process_endpoint(
         no_zoom = str(form.get("no_zoom", "")).lower() in {"1", "true", "yes"} or no_zoom
         skip_analysis = str(form.get("skip_analysis", "")).lower() in {"1", "true", "yes"} or skip_analysis
         model = form.get("model", model) or None
+        # min_duration arrives as a form field string (upload path only)
+        md = form.get("min_duration")
+        if md not in (None, ""):
+            try:
+                min_duration = float(md)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="min_duration must be a number")
         # Validate the multipart values through the same schema for
         # consistency — we drop the url requirement since we're using
         # an uploaded file path.
@@ -360,6 +369,7 @@ async def process_endpoint(
                 "no_zoom": no_zoom,
                 "skip_analysis": skip_analysis,
                 "model": model or None,
+                "min_duration": min_duration,
             })
         except ValidationError as exc:
             raise HTTPException(status_code=400, detail=exc.errors())
@@ -422,6 +432,7 @@ async def process_endpoint(
             no_zoom=no_zoom,
             skip_analysis=skip_analysis,
             model=model,
+            min_duration=min_duration,
         )
     except ValueError as exc:
         await asyncio.to_thread(shutil.rmtree, job_output_dir, True)
@@ -475,6 +486,7 @@ async def batch_process(req: BatchRequest, request: Request):
                 no_zoom=bool(getattr(req, "no_zoom", False)),
                 skip_analysis=bool(getattr(req, "skip_analysis", False)),
                 model=getattr(req, "model", None),
+                min_duration=getattr(req, "min_duration", None),
             )
         except ValueError as exc:
             # This item's output dir was already created above but it never

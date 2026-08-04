@@ -248,3 +248,20 @@ def test_reformat_prompt_carries_error_and_broken_output_only():
     assert '{"shorts": [broken' in p
     # It must NOT embed the transcript/full template (cost + latency bound).
     assert "VIDEO_DURATION_SECONDS" not in p
+
+
+def test_build_viral_prompt_min_duration_raises_window():
+    default_prompt, _ = build_viral_prompt(TRANSCRIPT, 123.4)
+    assert "15–60s" in default_prompt
+    assert "15s ≤ duration ≤ 60s" in default_prompt
+
+    long_prompt, _ = build_viral_prompt(TRANSCRIPT, 123.4, min_duration=60)
+    # The floor moves up AND the max follows it (min+30) so the range never
+    # degenerates to a single point.
+    assert "60–90s" in long_prompt
+    assert "60s ≤ duration ≤ 90s" in long_prompt
+    assert "15–60s" not in long_prompt
+
+    # Explicit max overrides the derived one (still kept >= min+30).
+    fixed, _ = build_viral_prompt(TRANSCRIPT, 123.4, min_duration=60, max_duration=120)
+    assert "60–120s" in fixed

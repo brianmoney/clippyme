@@ -51,6 +51,7 @@ def build_main_cmd(
     skip_analysis: bool = False,
     aspect: str | None = None,
     model: str | None = None,
+    min_duration: float | None = None,
     monitor: bool = False,
 ) -> list[str]:
     """Build argv for the checkpointed backend pipeline.
@@ -73,6 +74,9 @@ def build_main_cmd(
         lang_norm = language.strip()
         if lang_norm and lang_norm not in ALLOWED_LANGUAGES:
             raise ValueError(f"unsupported language: {language!r}")
+    if min_duration is not None:
+        if not (0 < float(min_duration) <= 300):
+            raise ValueError("min_duration must be in (0, 300] seconds")
 
     if url and url.lstrip().startswith("-"):
         raise ValueError("url must not start with '-'")
@@ -101,6 +105,8 @@ def build_main_cmd(
         cmd.append("--skip-analysis")
     if model and model.strip():
         cmd.extend(["--model", model.strip()])
+    if min_duration:
+        cmd.extend(["--min-duration", str(float(min_duration))])
     if monitor:
         cmd.append("--monitor")
     return cmd

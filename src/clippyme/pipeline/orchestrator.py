@@ -152,6 +152,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="auto",
     )
     parser.add_argument("--language", type=str, default=None)
+    parser.add_argument("--min-duration", type=float, default=None)
     parser.add_argument("--aspect", choices=["9:16", "1:1", "16:9"], default="9:16")
     parser.add_argument("--monitor", action="store_true")
     parser.add_argument("--model", type=str, default=None)
@@ -340,6 +341,7 @@ def _load_or_analyze(
             transcript,
             duration,
             instructions=args.instructions,
+            min_duration=args.min_duration,
         )
         if not clips_data or "shorts" not in clips_data:
             if should_use_fallback(args.monitor):
@@ -387,6 +389,7 @@ def _load_or_analyze(
             source_duration=duration or None,
             silences=silences,
             default_reframe_mode=args.reframe_mode,
+            min_duration=args.min_duration or 0.0,
         ):
             print(
                 f"🎯 snap[{event.path}]: [{event.old_start:.2f},{event.old_end:.2f}] "
