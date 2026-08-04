@@ -145,6 +145,27 @@ function MonitorSettings({ monitor, onApply, applying }) {
             value={minGapMin} onChange={(e) => setMinGapMin(e.target.value)} />
         </label>
       </div>
+      <div className="field">
+        <span className="field-label">Clips per segment</span>
+        <Segmented full value={clipSelection}
+          onChange={(v) => { setClipSelection(v); setClipSelectionTouched(true); }}
+          options={[{ id: 'fixed', label: 'Fixed number' }, { id: 'auto', label: 'Automatic' }]} />
+        <div style={{ display: 'grid', gridTemplateColumns: clipSelection === 'auto' ? 'repeat(2,1fr)' : '1fr', gap: 8, marginTop: 8 }}>
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span className="field-label">{clipSelection === 'auto' ? 'Max clips' : 'Clips'}</span>
+            <input className="key-input" type="number" min="0" max="1000" aria-label={`Settings clips per segment ${monitor.id}`}
+              value={maxClips} onChange={(e) => setMaxClips(e.target.value)} />
+            <div className="od">0 = no limit.</div>
+          </label>
+          {clipSelection === 'auto' && (
+            <label className="field" style={{ marginBottom: 0 }}>
+              <span className="field-label">Min viral score</span>
+              <input className="key-input" type="number" min="1" max="100" aria-label={`Settings min viral score ${monitor.id}`}
+                value={minScore} onChange={(e) => setMinScore(e.target.value)} />
+            </label>
+          )}
+        </div>
+      </div>
       <div className="opt" style={{ borderBottom: 0, paddingLeft: 0, paddingRight: 0 }}>
         <div className="otxt"><div className="ot">Subtitle overrides</div><div className="od">Applies to future clips only</div></div>
         <Switch on={subOn} onChange={setSubOn} />
@@ -389,8 +410,9 @@ export function LiveMonitorView({ pushToast }) {
           <div style={{ display: 'grid', gridTemplateColumns: clipSelection === 'auto' ? 'repeat(2,1fr)' : '1fr', gap: 8, marginTop: 8 }}>
             <label className="field" style={{ marginBottom: 0 }}>
               <span className="field-label">{clipSelection === 'auto' ? 'Max clips' : 'Clips'}</span>
-              <input className="key-input" type="number" min="1" max="50" aria-label="Clips per segment"
+              <input className="key-input" type="number" min="0" max="1000" aria-label="Clips per segment"
                 value={maxClips} onChange={(e) => setMaxClips(Number(e.target.value))} />
+              <div className="od">0 = no limit — publish every clip the segment yields.</div>
             </label>
             {clipSelection === 'auto' && (
               <label className="field" style={{ marginBottom: 0 }}>

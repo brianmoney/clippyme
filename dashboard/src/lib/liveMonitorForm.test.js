@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
-import { validateSlug, buildPlatformTargets, classifyStartError, clampMonitorTimings } from './liveMonitorForm.js';
+import { validateSlug, buildPlatformTargets, classifyStartError, clampMonitorTimings, clipSelectionPayload } from './liveMonitorForm.js';
 
 test('validateSlug: kick/twitch required, charset, length', () => {
   assert.equal(validateSlug(''), 'Channel is required');
@@ -90,4 +90,23 @@ test('clampMonitorTimings: values above schema caps are clamped', () => {
   assert.equal(big.segment_seconds, 3600);       // 90min → cap 60min
   assert.equal(big.prelive_skip_seconds, 7200);  // cap 120min
   assert.equal(big.min_gap_seconds, 86400);      // cap 24h
+});
+
+test('clipSelectionPayload: fixed vs auto, bounds and garbage input', () => {
+  assert.deepEqual(clipSelectionPayload('fixed', 5, 70), {
+    clip_selection: 'fixed', max_clips: 5, min_viral_score: 70,
+  });
+  assert.deepEqual(clipSelectionPayload('auto', 12, 85), {
+    clip_selection: 'auto', max_clips: 12, min_viral_score: 85,
+  });
+  // Unknown selection falls back to fixed; out-of-range values are clamped.
+  assert.deepEqual(clipSelectionPayload('nonsense', 9999, 0), {
+    clip_selection: 'fixed', max_clips: 1000, min_viral_score: 1,
+  });
+  // 0 is "no limit", not an out-of-range count to clamp back up.
+  assert.equal(clipSelectionPayload('fixed', 0, 70).max_clips, 0);
+  // A cleared/garbage input keeps the schema defaults instead of 422ing.
+  assert.deepEqual(clipSelectionPayload('auto', '', 'x'), {
+    clip_selection: 'auto', max_clips: 5, min_viral_score: 70,
+  });
 });

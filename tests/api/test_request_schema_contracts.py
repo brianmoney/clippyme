@@ -45,10 +45,16 @@ def test_live_monitor_start_preserves_runtime_domain_fields():
     assert payload["timezone"] == "Europe/Rome"
 
 
-@pytest.mark.parametrize("max_clips", [0, 51])
+@pytest.mark.parametrize("max_clips", [-1, 1001])
 def test_live_monitor_start_bounds_max_clips(max_clips):
     with pytest.raises(ValidationError):
         LiveMonitorStartRequest(**_MONITOR_BASE, max_clips=max_clips)
+
+
+def test_live_monitor_start_accepts_zero_max_clips_as_uncapped():
+    # 0 is the explicit "no cap" value, not an invalid count.
+    request = LiveMonitorStartRequest(**_MONITOR_BASE, max_clips=0)
+    assert request.model_dump()["max_clips"] == 0
 
 
 def test_live_monitor_start_rejects_unknown_timezone():
