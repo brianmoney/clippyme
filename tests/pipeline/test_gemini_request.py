@@ -135,6 +135,16 @@ def test_creator_block_only_when_given_and_sanitised():
     assert len(owner_line) <= 64
 
 
+def test_prompt_gates_on_clip_worthiness_before_scoring():
+    # The rubric alone scores *how good* a moment is; the gate decides whether
+    # it is a clip at all. The gate must come first or flat moments score in.
+    prompt, _ = build_viral_prompt(TRANSCRIPT, 60)
+    assert prompt.index("WORTH CUTTING") < prompt.index("VIRAL_SCORE RUBRIC")
+    for rule in ("UNEXPECTED TURN", "POLARIZATION", "RELATABILITY", "NEW OR USEFUL INFO"):
+        assert rule in prompt
+    assert "Emit FEWER, harder clips" in prompt
+
+
 def test_prompt_bans_mechanical_engagement_bait():
     # TikTok/Meta demote mechanical CTAs — the prompt must not ask for one.
     prompt, _ = build_viral_prompt(TRANSCRIPT, 60)

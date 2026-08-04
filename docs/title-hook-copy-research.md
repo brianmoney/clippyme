@@ -56,6 +56,34 @@ shipping every clip into the demoted bucket and has been removed.
   moment-specific and searchable, not "momenti epici".
   <https://www.clipspeed.ai/blog/clipping-twitch-streamers-youtube-shorts.html>
 
+## What makes a moment clippable (the selection gate)
+
+Practitioner consensus from clipping operators (SERVIUOS, ~25k-clipper Discord;
+Nashifys; Joe Sbiti) — a moment earns a clip only if it hits one of four
+things, and the rest of the editing is secondary to that judgement:
+
+- **Unexpected turn** — plot twist / pattern interrupt; retention comes from
+  the surprise, not the topic.
+- **Strong emotion or polarization** — the share test is "would this get sent
+  to a friend / dropped in a group chat". A take half the audience wants to
+  argue with beats one everyone agrees with, because arguing is a comment.
+- **Relatability** — "this is literally me", specific and everyday.
+- **New or useful info** — save-worthy; the save is itself a ranking signal.
+
+Two mechanics ride with it: the hook must land in the first 1–3s (a moment
+whose best beat is at 0:20 is a bad clip even if the beat is great), and dead
+air is the single biggest retention killer — the reaction beat after the
+reveal is *part* of the clip, the silence before it is not.
+
+Encoded in `GEMINI_PROMPT_TEMPLATE` as the `## IS THIS MOMENT EVEN WORTH
+CUTTING?` gate, deliberately placed **before** the rubric: the rubric only
+ranks moments that already cleared the gate. It pairs with the live monitor's
+`clip_selection: auto` floor — both exist so a weak segment yields fewer clips
+instead of padding the quota.
+
+Not adopted: those workflows also lean on manual per-clip music beds, sound
+effects and CapCut styling — out of scope for an automated pipeline.
+
 ## Italian register
 
 - Always `tu` / `voi`, never `lei`; the informal, near-improvised register is
