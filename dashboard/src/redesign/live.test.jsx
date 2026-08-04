@@ -166,6 +166,14 @@ test('catchup defaults to backfill', async () => {
   expect(startLiveMonitor.mock.calls[0][0].catchup).toBe('backfill');
 });
 
+test('catchup control is hidden in VOD mode', async () => {
+  render(<LiveMonitorView />);
+  expect(screen.getByRole('button', { name: 'From now only' })).toBeInTheDocument();
+  // VOD processes whole feed items — there is no missed-window backfill to steer.
+  fireEvent.click(screen.getByRole('button', { name: 'VOD' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'From now only' })).toBeNull());
+});
+
 test('subtitle override section untouched → start payload has no compose key', async () => {
   const { startLiveMonitor } = await import('./realApi');
   render(<LiveMonitorView />);

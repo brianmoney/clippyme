@@ -402,11 +402,16 @@ export function LiveMonitorView({ pushToast }) {
           )}
         </div>
 
-        <div className="field">
-          <span className="field-label">Catchup</span>
-          <Segmented full value={catchup} onChange={setCatchup}
-            options={[{ id: 'backfill', label: 'From the start of the live' }, { id: 'live_only', label: 'From now only' }]} />
-        </div>
+        {/* Catchup only steers the live capture loop (backfill of the windows
+            missed before the monitor noticed the stream). VOD mode processes
+            whole items from a feed, so the choice is meaningless there. */}
+        {mode !== 'vod' && (
+          <div className="field">
+            <span className="field-label">Catchup</span>
+            <Segmented full value={catchup} onChange={setCatchup}
+              options={[{ id: 'backfill', label: 'From the start of the live' }, { id: 'live_only', label: 'From now only' }]} />
+          </div>
+        )}
 
         <div className="field">
           <span className="field-label">Clips per segment</span>
