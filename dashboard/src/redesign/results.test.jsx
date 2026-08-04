@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { ResultsView } from './results';
 import * as realApi from './realApi';
@@ -58,4 +58,30 @@ test('transcript failure surfaces an unavailable hint without crashing', async (
   fireEvent.click(await screen.findByRole('button', { name: 'Toggle transcript' }));
 
   expect(await screen.findByText('Transcript unavailable for this clip.')).toBeTruthy();
+});
+
+test('transcript copy writes the joined segment text to the clipboard', async () => {
+  vi.spyOn(realApi, 'getClipTranscript').mockResolvedValue({
+    segments: [
+      { index: 0, text: 'Hello world', start: 0.0, end: 2.5 },
+      { index: 1, text: 'This is the second line', start: 2.5, end: 4.0 },
+    ],
+    duration: 10,
+    language: 'en',
+  });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const clipboardOrig = navigator.clipboard;
+  const secureOrig = window.isSecureContext;
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+
+  renderView();
+  fireEvent.click(await screen.findByRole('button', { name: 'Toggle transcript' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Copy transcript' }));
+
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('Hello world This is the second line'));
+  expect(await screen.findByText('Copied')).toBeTruthy();
+
+  Object.defineProperty(navigator, 'clipboard', { value: clipboardOrig, configurable: true });
+  Object.defineProperty(window, 'isSecureContext', { value: secureOrig, configurable: true });
 });

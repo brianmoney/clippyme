@@ -14,6 +14,8 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
   const [transcript, setTranscript] = useState(null); // null = not loaded yet
   const [txLoading, setTxLoading] = useState(false);
   const [txErr, setTxErr] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const transcriptText = useMemo(() => (transcript?.segments || []).map((s) => s.text).filter(Boolean).join(' ').trim(), [transcript]);
   const selected = state?.selected !== false;
   const score = Math.round(clip.viral_score || 0);
   const mode = state?.reframeMode || clip.reframe_mode || 'auto';
@@ -67,6 +69,34 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
     }
   };
 
+  // Copy the clip's full transcript text to the clipboard. Uses the async
+  // Clipboard API when available (secure contexts incl. localhost), falling
+  // back to execCommand for LAN/plain-http hosts.
+  const copyTranscript = async (event) => {
+    event.stopPropagation();
+    if (!transcriptText) return;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(transcriptText);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = transcriptText;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      pushToast?.('success', 'Transcript copied to clipboard');
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      pushToast?.('warn', 'Could not copy transcript');
+    }
+  };
+
   return (
     <article {...selectionProps} className={`clip${score >= 90 ? ' top' : ''}${selectMode && selected ? ' sel' : ''}`}>
       <div className="clip-media" style={{ padding: 0, background: '#000' }}>
@@ -104,7 +134,15 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
         <div className="clip-transcript">
           <div className="ct-head">
             <span className="ct-title">Transcript</span>
-            {transcript?.language && <span className="ct-lang">{transcript.language}</span>}
+            <span className="ct-right">
+              {transcript?.language && <span className="ct-lang">{transcript.language}</span>}
+              {transcriptText && (
+                <button type="button" className="ct-copy" title="Copy transcript to clipboard"
+                  aria-label="Copy transcript" onClick={copyTranscript}>
+                  <Icon n={copied ? 'check' : 'copy'} />{copied ? 'Copied' : 'Copy'}
+                </button>
+              )}
+            </span>
           </div>
           {txLoading && <div className="eo-d ct-hint">Loading transcript…</div>}
           {txErr && <div className="eo-d ct-hint">Transcript unavailable for this clip.</div>}
