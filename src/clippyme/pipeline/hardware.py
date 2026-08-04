@@ -10,17 +10,63 @@ import os
 
 import torch
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+def _torch_cuda_usable() -> bool:
+    """Whether torch can actually launch kernels on the visible GPU.
+
+    torch.cuda.is_available() is True even for GPUs the installed wheels have no
+    kernels for (e.g. Pascal sm_61 vs. a build supporting only sm_75+) — those
+    fail at runtime with cudaErrorNoKernelImageForDevice. Compare the device
+    capability against the arch list baked into the wheel.
+    """
+    if not torch.cuda.is_available():
+        return False
+    arch_list = torch.cuda.get_arch_list()
+    if not arch_list:
+        return False
+    try:
+        major, minor = torch.cuda.get_device_capability(0)
+    except Exception:
+        return False
+    return f"sm_{major}{minor}" in arch_list
+
+
+# Device for torch-backed work (reframe/YOLO). Kept separate from the whisper
+# probe below: ctranslate2 ships its own CUDA kernels, so transcription can use
+# a GPU torch cannot (e.g. Pascal with a modern wheel).
+DEVICE = "cuda" if _torch_cuda_usable() else "cpu"
+
+
+def _pick_whisper_compute_type() -> str:
+    """Whisper compute type for CUDA, defaulting to float16.
+
+    Pascal and older (CC < 7.0) lack efficient FP16 units, which ctranslate2
+    rejects outright — fall back to int8 there. Override explicitly via
+    WHISPER_COMPUTE_TYPE (e.g. "float32" for a CPU-hostile-quantized source).
+    """
+    override = os.getenv("WHISPER_COMPUTE_TYPE", "").strip()
+    if override:
+        return override
+    try:
+        cc = torch.cuda.get_device_capability(0)  # (major, minor)
+        if cc[0] < 7:
+            return "int8"
+    except Exception:
+        pass
+    return "float16"
+
+
+WHISPER_COMPUTE_TYPE = _pick_whisper_compute_type()
 
 # Test if CUDA actually works for faster-whisper (needs libcublas via ctranslate2).
 # Creating the model is not enough — libcublas only loads during actual encoding.
 CUDA_AVAILABLE = False
 GPU_VRAM_GB = 0
-if DEVICE == "cuda":
+if torch.cuda.is_available():
     try:
         from faster_whisper import WhisperModel as _WM
         import numpy as _np
-        _m = _WM("tiny", device="cuda", compute_type="float16")
+        _m = _WM("tiny", device="cuda", compute_type=WHISPER_COMPUTE_TYPE)
         _dummy = _np.zeros(16000, dtype=_np.float32)
         _m.transcribe(_dummy)
         del _m, _dummy

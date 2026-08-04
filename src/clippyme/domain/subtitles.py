@@ -22,6 +22,29 @@ def _strip_ass_braces(text: str) -> str:
 
 _cuda_works = None  # cached after first check
 
+
+def _whisper_compute_type():
+    """Whisper compute type for CUDA, mirroring ``pipeline.hardware``.
+
+    Pascal and older (CC < 7.0) lack the efficient FP16 units ctranslate2
+    requires — a hardcoded "float16" silently drops those GPUs (and the API
+    process importing ``pipeline.hardware`` would run its full CUDA probe, so
+    the tiny check is kept local). Respects the ``WHISPER_COMPUTE_TYPE`` env
+    override like the pipeline path.
+    """
+    override = (os.getenv("WHISPER_COMPUTE_TYPE") or "").strip()
+    if override:
+        return override
+    try:
+        import torch
+        major, _minor = torch.cuda.get_device_capability(0)
+        if major < 7:
+            return "int8"
+    except Exception:
+        pass
+    return "float16"
+
+
 def _check_cuda():
     global _cuda_works
     if _cuda_works is not None:
@@ -33,7 +56,7 @@ def _check_cuda():
     try:
         import numpy as _np
         from faster_whisper import WhisperModel
-        _m = WhisperModel("tiny", device="cuda", compute_type="float16")
+        _m = WhisperModel("tiny", device="cuda", compute_type=_whisper_compute_type())
         _m.transcribe(_np.zeros(16000, dtype=_np.float32))
         del _m
         _cuda_works = True
@@ -81,7 +104,7 @@ def transcribe_audio(video_path):
     Returns transcript in the same format as main.py for compatibility.
     """
     device = "cuda" if _check_cuda() else "cpu"
-    compute_type = "float16" if device == "cuda" else "int8"
+    compute_type = _whisper_compute_type() if device == "cuda" else "int8"
     whisper_model = _select_whisper_model()
     logger.info("🎙️  Transcribing audio [%s] from: %s (%s mode)", whisper_model, video_path, device.upper())
     model = _get_cached_whisper_model(whisper_model, device, compute_type)
