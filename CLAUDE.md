@@ -40,7 +40,14 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   vod modes, global `picked_slots` publish spacing, state in
   `data/live_monitor.json`; durable auto-resume via `resume_on_start`;
   runtime config updates `POST /api/live-monitor/{id}/config` (allow-listed
-  fields, apply to future clips); start-time `catchup: backfill|live_only`;
+  fields, apply to future clips); per-segment clip selection
+  (`clip_selection: fixed|auto` — `fixed` publishes the top `max_clips` by
+  viral_score, `auto` adds a `min_viral_score` floor via
+  `CLIPPYME_MIN_VIRAL_SCORE` so a weak segment yields fewer clips or none,
+  with `max_clips` staying the ceiling); per-monitor `smart_cut` (opt-in — adds
+  the `smartcut` toggle to the auto-publish compose recipe) and
+  `letterbox_zoom` (monitors always render reframe-`disabled`);
+  start-time `catchup: backfill|live_only`;
   publishing pause/resume `POST /api/live-monitor/{id}/publishing` with a
   persisted pending queue that auto-drains on resume/restart; after a
   confirmed Zernio publish the clip's artifacts are deleted and its metadata
@@ -176,9 +183,12 @@ they sit just under the video instead of floating low in the black.
 
 **Reframe**: three user modes — `auto` (face tracking + per-scene strategy),
 `subject` (FrameShift weighted-interest crop; legacy alias `object`),
-`disabled` (letterbox). `disabled` also forces the Ken Burns push OFF
-(`zoom_end=None` in `process_video_to_vertical`) — a locked frame must not
-drift. Comfort mode is default-on: within a scene the camera
+`disabled` (letterbox — the WHOLE frame between black bars, nothing cropped;
+`--letterbox-zoom` / `letterbox_zoom` optionally trims 5–15% off the width for
+a fixed zoom, geometry in the pure `reframe_ops.letterbox_plan`). `disabled`
+also forces the Ken Burns push OFF (`zoom_end=None` in
+`process_video_to_vertical`) — a locked frame must not drift.
+Comfort mode is default-on: within a scene the camera
 never moves (`collapse_scene_targets`), zoom locks per scene. The output
 aspect is an explicit `process_video_to_vertical(..., aspect_ratio=)`
 parameter passed by `main.py` per job — there is no module-global. Post-hoc

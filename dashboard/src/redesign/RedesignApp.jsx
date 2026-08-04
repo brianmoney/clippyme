@@ -31,7 +31,7 @@ import { useSessionPersistence, loadPersistedSession, clearPersistedSession } fr
 const DEFAULT_OPTS = {
   mode: 'single', source: 'url', url: '', file: null, fileName: '', batch: '', batchFiles: [], instructions: '',
   clipsAuto: true, clips: 7, aspect: '9:16',
-  detect: true, reframeMode: 'auto', smartcut: true, zoom: true, model: '',
+  detect: true, reframeMode: 'auto', letterboxZoom: 0, smartcut: true, zoom: true, model: '',
   minDuration: 0,
   subtitles: true, subMode: 'karaoke', subPreset: 'hormozi_bold',
   // Bottom-left is the default reading position: low enough to stay out of the

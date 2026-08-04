@@ -60,7 +60,9 @@ def test_empty_template_falls_back_to_auto_title():
 def test_build_monitor_compose_defaults():
     clip = {"viral_hook_text": "Wait for it", "title": "T"}
     recipe = build_monitor_compose("kick", "grenbaud", clip, None)
-    assert recipe["toggles"] == {"hook": True, "subtitles": True, "banner": True}
+    # smartcut is opt-in per monitor → off unless the config asks for it
+    assert recipe["toggles"] == {
+        "hook": True, "subtitles": True, "banner": True, "smartcut": False}
     assert recipe["hook_params"]["position"] == "top"
     assert recipe["hook_params"]["text"] == "Wait for it"
     # subtitles below the banner, left-aligned
@@ -74,6 +76,12 @@ def test_build_monitor_compose_defaults():
 def test_build_monitor_compose_no_hook_text_disables_hook():
     recipe = build_monitor_compose("twitch", "chan", {}, None)
     assert recipe["toggles"]["hook"] is False
+
+
+def test_build_monitor_compose_smart_cut_opt_in():
+    recipe = build_monitor_compose("kick", "grenbaud", {"viral_hook_text": "x"},
+                                   None, smart_cut=True)
+    assert recipe["toggles"]["smartcut"] is True
 
 
 def test_build_monitor_compose_banner_override_disables():
@@ -99,6 +107,23 @@ def test_validate_monitor_config_carries_banner_and_compose():
     })
     assert cfg["banner"] == {"enabled": False}
     assert cfg["compose"] == {"subtitle_params": {"align": "center"}}
+
+
+def test_validate_monitor_config_smart_cut_and_zoom():
+    base = {
+        "platform": "kick", "mode": "live", "slug": "grenbaud",
+        "platforms": [{"platform": "tiktok", "accountId": "acc"}],
+    }
+    cfg = validate_monitor_config(base)
+    assert cfg["smart_cut"] is False      # opt-in: an extra render per clip
+    assert cfg["letterbox_zoom"] == 0.0   # whole frame between the bars
+
+    cfg = validate_monitor_config({**base, "smart_cut": True, "letterbox_zoom": 10})
+    assert cfg["smart_cut"] is True
+    assert cfg["letterbox_zoom"] == pytest.approx(0.10)
+
+    # A garbage zoom must not stop a monitor from starting — it reads as off.
+    assert validate_monitor_config({**base, "letterbox_zoom": "abc"})["letterbox_zoom"] == 0.0
 
 
 # --- should_process_segment ------------------------------------------------

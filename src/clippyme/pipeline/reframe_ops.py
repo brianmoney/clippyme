@@ -147,6 +147,75 @@ def asymmetric_zoom_step(current: float, target: float,
     return current + diff * rate
 
 
+# --- letterbox ("reframe off") geometry -------------------------------------
+
+# Bounds of the optional letterbox zoom, mirrored by the API schema and the
+# --letterbox-zoom CLI flag. 0 = off (the untouched frame); anything in
+# [MIN, MAX] crops that fraction off the WIDTH.
+LETTERBOX_ZOOM_MIN = 0.05
+LETTERBOX_ZOOM_MAX = 0.15
+
+
+def normalize_letterbox_zoom(value) -> float:
+    """Coerce a user-supplied letterbox zoom to 0.0 (off) or [0.05, 0.15].
+
+    Accepts either a fraction (0.1) or a percentage (10) — anything above 1 is
+    read as a percentage, which is how the dashboard slider sends it. Raises
+    ``ValueError`` on a non-numeric value; a numeric one is clamped, never
+    rejected, so a stale client can't fail a whole job over a slider.
+    """
+    if value is None or value == "":
+        return 0.0
+    z = float(value)          # ValueError on garbage — caller maps it to 400
+    if z > 1.0:
+        z /= 100.0
+    if z <= 0:
+        return 0.0
+    return min(max(z, LETTERBOX_ZOOM_MIN), LETTERBOX_ZOOM_MAX)
+
+
+def letterbox_plan(src_w: int, src_h: int, out_w: int, out_h: int,
+                   zoom: float = 0.0):
+    """Geometry for a reframe-OFF frame: the whole source inside black bars.
+
+    Reframe 'disabled' means exactly that — nothing is cropped away, the source
+    is scaled to the output width and the leftover height stays black (bars top
+    and bottom).
+
+    ``zoom`` (0 = off, otherwise 0.05–0.15) is the one deliberate exception: it
+    trims that fraction off the width (half per side), so scaling the remainder
+    to the same output width magnifies the picture by ``1/(1-zoom)`` and the
+    bars shrink by the same factor. Aspect is preserved, so this reads as a
+    fixed zoom, not a stretch.
+
+    Returns ``(crop, size, offset)``: ``crop`` = (x, y, w, h) in source pixels,
+    ``size`` = (w, h) to scale that crop to, ``offset`` = (x, y) of the scaled
+    image on the output canvas. All values are even and in-bounds.
+    """
+    def _even(n, lo=2):
+        n = int(n)
+        return max(lo, n - (n % 2))
+
+    z = min(max(float(zoom or 0.0), 0.0), 0.5)
+    crop_w = _even(round(src_w * (1.0 - z)))
+    crop_w = min(crop_w, _even(src_w))
+    crop_x = (src_w - crop_w) // 2
+
+    scale = out_w / crop_w
+    scaled_h = _even(round(src_h * scale))
+    crop_y, crop_h = 0, _even(src_h)
+    if scaled_h > out_h:
+        # Zoomed past the point where the frame still fits vertically — take the
+        # centre band instead of overflowing the canvas.
+        crop_h = _even(round(crop_h * out_h / scaled_h))
+        crop_y = (src_h - crop_h) // 2
+        scaled_h = _even(out_h)
+
+    return ((crop_x, crop_y, crop_w, crop_h),
+            (_even(out_w), scaled_h),
+            (0, max(0, (out_h - scaled_h) // 2)))
+
+
 # --- saliency-based crop selection (faceless scenes) ------------------------
 
 def salient_crop_center(column_energy, crop_w: float, frame_w: float,

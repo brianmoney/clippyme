@@ -136,7 +136,8 @@ def allocate_clip_filename(title_template, clip, existing, counter):
     return candidate, counter
 
 
-def build_monitor_compose(platform: str, channel: str, clip: dict, override=None) -> dict:
+def build_monitor_compose(platform: str, channel: str, clip: dict, override=None,
+                          smart_cut: bool = False) -> dict:
     """Compose recipe a monitor burns before auto-publishing one clip.
 
     Default layout for a letterboxed (reframe 'disabled') monitor clip:
@@ -160,6 +161,9 @@ def build_monitor_compose(platform: str, channel: str, clip: dict, override=None
         "hook": bool(hook_params.get("text")),
         "subtitles": True,
         "banner": bool(banner),
+        # Opt-in per monitor: strips silences/fillers before the overlays are
+        # burned (compose runs subtitles BEFORE smartcut, so timing holds).
+        "smartcut": bool(smart_cut),
         **(ov.get("toggles") or {}),
     }
     return {
@@ -214,6 +218,23 @@ def _validate_catchup(value) -> str:
     if catchup not in ("backfill", "live_only"):
         raise ValidationError("catchup must be 'backfill' or 'live_only'")
     return catchup
+
+
+def _validate_clip_selection(value) -> str:
+    selection = str(value or "fixed").strip().lower()
+    if selection not in ("fixed", "auto"):
+        raise ValidationError("clip_selection must be 'fixed' or 'auto'")
+    return selection
+
+
+def _letterbox_zoom_or_zero(value) -> float:
+    """Clamp a monitor letterbox zoom, treating garbage as 'off' — a bad slider
+    value must not stop a running monitor from capturing."""
+    from clippyme.pipeline.reframe_ops import normalize_letterbox_zoom
+    try:
+        return normalize_letterbox_zoom(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _validate_bool(value, field: str) -> bool:
@@ -291,6 +312,18 @@ def validate_monitor_config(config: dict, default_timezone: str = "America/New_Y
         # Max clips kept per segment (top-N by viral_score) — bounds a
         # publish-limited monitor's output. Clamped to [1, 50], default 5.
         "max_clips": _clamp_int(config.get("max_clips"), 5, 1, 50),
+        # "fixed" always publishes the top max_clips of a segment; "auto" first
+        # drops everything under min_viral_score, so a weak segment yields
+        # fewer clips (or none) instead of padding the quota with filler.
+        "clip_selection": _validate_clip_selection(config.get("clip_selection")),
+        "min_viral_score": _clamp_int(config.get("min_viral_score"), 70, 1, 100),
+        # Burn Smart Cut (silence/filler removal) into every clip before
+        # publishing. Off by default: it re-renders each clip, and a stream
+        # segment with clean pacing gains nothing from it.
+        "smart_cut": _validate_bool(config.get("smart_cut", False), "smart_cut"),
+        # Fixed zoom on the letterbox render (monitors always run reframe
+        # 'disabled'). 0 = whole frame between the bars, else 0.05-0.15.
+        "letterbox_zoom": _letterbox_zoom_or_zero(config.get("letterbox_zoom")),
     }
 
 
@@ -300,7 +333,8 @@ def validate_monitor_config(config: dict, default_timezone: str = "America/New_Y
 _UPDATABLE_CONFIG_FIELDS = (
     "instructions", "caption_template", "title_template", "min_gap_seconds",
     "segment_seconds", "prelive_skip_seconds", "platforms", "banner", "compose",
-    "poll_interval", "delete_after_publish", "max_clips",
+    "poll_interval", "delete_after_publish", "max_clips", "clip_selection",
+    "min_viral_score", "smart_cut", "letterbox_zoom",
 )
 
 # The full set of cfg keys worth persisting/restoring (mirrors
@@ -310,6 +344,7 @@ _SNAPSHOT_CONFIG_FIELDS = (
     "prelive_skip_seconds", "min_gap_seconds", "poll_interval", "loop",
     "instructions", "caption_template", "title_template", "timezone",
     "banner", "compose", "catchup", "delete_after_publish", "max_clips",
+    "clip_selection", "min_viral_score", "smart_cut", "letterbox_zoom",
 )
 
 
@@ -1127,7 +1162,9 @@ class LiveMonitor:
         # top bar, the attribution banner attached under the video band, and
         # subtitles below it — all of which need the un-reframed 9:16 layout.
         cmd = build_main_cmd(input_path=os.path.abspath(seg_path), output_dir=job_dir,
-                             reframe_mode="disabled", instructions=self.cfg.get("instructions") or None,
+                             reframe_mode="disabled",
+                             letterbox_zoom=self.cfg.get("letterbox_zoom") or 0,
+                             instructions=self.cfg.get("instructions") or None,
                              monitor=True)
         await submit_job(
             jobs=self._jobs, job_queue=self._job_queue, job_id=job_id,
@@ -1142,7 +1179,9 @@ class LiveMonitor:
         job_id, job_dir, env = self._new_job_dir()
         cookies_path = os.path.join("data", "cookies.txt")
         cmd = build_main_cmd(url=url, output_dir=job_dir, cookies_path=cookies_path,
-                             reframe_mode="disabled", instructions=self.cfg.get("instructions") or None,
+                             reframe_mode="disabled",
+                             letterbox_zoom=self.cfg.get("letterbox_zoom") or 0,
+                             instructions=self.cfg.get("instructions") or None,
                              monitor=True)
         await submit_job(
             jobs=self._jobs, job_queue=self._job_queue, job_id=job_id,
@@ -1234,7 +1273,8 @@ class LiveMonitor:
             resolved = await asyncio.to_thread(
                 resolve_clip, job_id, idx, self._output_dir, require_file=True)
             recipe = build_monitor_compose(
-                self.platform, self.cfg["channel"], clip, self.cfg.get("compose"))
+                self.platform, self.cfg["channel"], clip, self.cfg.get("compose"),
+                smart_cut=bool(self.cfg.get("smart_cut")))
             composed = await compose_layers(
                 base_clip=resolved.clip_path, job_dir=resolved.job_dir, clip_index=idx,
                 metadata=resolved.metadata, clip_info=resolved.clip_info, **recipe)
