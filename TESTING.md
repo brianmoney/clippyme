@@ -8,7 +8,7 @@ in a heavy CV/ML runtime (`cv2`, `mediapipe`, `scenedetect`, `ultralytics`,
 
 | Tier | Marker | Where it runs | What it covers |
 |------|--------|---------------|----------------|
-| Fast (host) | *unmarked* | any machine with `pip install -e .` + `pytest` | API schemas, domain logic, config/storage, Gemini parser, reframe math, Deepgram retry logic, social scheduler, history scanner |
+| Fast (host) | *unmarked* | any machine with `pip install -e .` + `pytest` | API schemas, domain logic, config/storage, Gemini parser, reframe math, Deepgram retry logic, social scheduler, history scanner, runtime state / retry / resume policy, preflight estimates, media-QA verdicts, quality-suite manifests |
 | Integration | `@pytest.mark.integration` | Docker image with the full runtime | `clippyme.pipeline.main` orchestration, scene detection, YOLO/MediaPipe tracking |
 
 `tests/conftest.py` automatically skips collecting the pipeline integration

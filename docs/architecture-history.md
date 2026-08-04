@@ -5,6 +5,47 @@ current-state guide. The full pre-2026-07 CLAUDE.md (which doubled as a
 narrative changelog) is in git history; per-feature rationale lives in the
 `docs/*-analysis.md` comparative studies and `docs/fable5-improvement-log.md`.
 
+## 2026-07 (late) — runtime resilience, media QA, frontend hardening
+
+The pipeline was reliable when nothing went wrong and had no answer when
+something did: a transient failure re-downloaded and re-transcribed from
+scratch, a backend restart abandoned the job, a bad render shipped as a public
+clip, and there was no way to reject an expensive job before paying for it.
+
+1. **Orchestrator entrypoint** (`pipeline/orchestrator.py`): queued jobs now run
+   `python -m clippyme.pipeline.orchestrator` instead of `pipeline.main`.
+   `main.py` keeps the heavy algorithms (transcription, Gemini, cutting,
+   reframe); the orchestrator wraps them with durability and verification.
+2. **Durable state** (`domain/runtime_state.py`): per-job phase/progress/attempt
+   state in `<job>/.clippyme_runtime.json` plus reusable artefacts in
+   `<job>/.clippyme_checkpoint/` — atomic, fsync'd, owner-only, and blocked on
+   the `/videos` mount. Retries and post-restart resumes reuse the existing
+   download, transcript, analysis and finished clips. Progressive metadata alone
+   is deliberately not treated as a completion marker.
+3. **Bounded retries**: transient failures back off exponentially up to
+   `CLIPPYME_JOB_MAX_ATTEMPTS`; exit code `2` was reserved for deterministic
+   validation/preflight rejection and is never retried.
+4. **Preflight** (`pipeline/preflight.py`): the source is probed before
+   transcription or Gemini analysis and runtime, peak disk and Gemini
+   tokens/cost are estimated, so quota-busting jobs are rejected before the
+   expensive work rather than halfway through it.
+5. **Output QA** (`pipeline/media_qa.py`, `pipeline/quality_suite.py`): every
+   temporary render is verified (streams, duration, aspect, black/frozen-frame
+   ratio, loudness) *before* it atomically replaces the public clip. Structural
+   defects trigger a bounded re-render; signal findings stay as metadata
+   warnings instead of deleting a usable clip. The same policy is replayable
+   over versioned fixtures as a CI-safe regression suite.
+6. **Speaker tracking**: identity association moved from horizontal position
+   alone to 2-D distance + box overlap, scored on face size and mouth motion,
+   with relative switch hysteresis, stale-identity pruning and optional
+   two-participant dialogue framing.
+7. **Frontend**: error boundary, lazy video loading, extracted
+   `lib/storage.js` / `createValidation.js` / `runtimeTelemetry.js`, a rendered
+   accessibility gate in the test suite, and the runtime telemetry surfaced in
+   the processing view.
+
+Reference: `docs/runtime-quality.md`.
+
 ## 2026-07 — repo-wide risanamento (6 waves)
 
 1. **Dead-code removal**: `reframe_ops.iou/associate_subject/rank_subject/
