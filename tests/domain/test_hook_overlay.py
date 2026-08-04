@@ -53,3 +53,41 @@ def test_logo_filter_enable_window_only_on_hook():
     )
     # logo overlay part must stay untouched (no enable clause)
     assert "overlay=5:7" in f and "overlay=5:7:enable" not in f
+
+
+# --- animated hooks need a looped image input ---------------------------------
+
+def _argv_for(monkeypatch, tmp_path, animate):
+    """Run add_hook_to_video with every subprocess stubbed; return the ffmpeg argv."""
+    import subprocess
+
+    from clippyme.domain import hooks
+
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"\x00")
+    monkeypatch.setattr(hooks, "create_hook_image",
+                        lambda *a, **k: (str(tmp_path / "hook.png"), 400, 120))
+    monkeypatch.setattr(subprocess, "check_output", lambda *a, **k: b"1080x1920")
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    hooks.add_hook_to_video(str(video), "hi", str(tmp_path / "out.mp4"),
+                            style={"animate": animate})
+    return seen["cmd"]
+
+
+def test_animated_hook_loops_the_png_and_ends_with_the_video(monkeypatch, tmp_path):
+    cmd = _argv_for(monkeypatch, tmp_path, animate=True)
+    # A single-frame PNG + fade = alpha 0 forever (the hook never showed up).
+    assert cmd[cmd.index("-loop") + 1] == "1"
+    assert cmd.index("-loop") < cmd.index("-i", cmd.index("-loop"))
+    assert "-shortest" in cmd  # else the looped image would never end the output
+
+
+def test_static_hook_argv_unchanged(monkeypatch, tmp_path):
+    cmd = _argv_for(monkeypatch, tmp_path, animate=False)
+    assert "-loop" not in cmd and "-shortest" not in cmd

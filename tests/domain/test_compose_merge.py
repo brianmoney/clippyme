@@ -90,7 +90,7 @@ def _run_compose(tmp_path, monkeypatch, toggles, **kwargs):
         return current_input
 
     async def fake_subs(current_input, job_dir, clip_index, metadata, clip_info,
-                        subtitle_params, files, pre_vf=None):
+                        subtitle_params, files, pre_vf=None, banner_active=False):
         calls["pre_vf"] = pre_vf
         out = os.path.join(job_dir, "subbed.mp4")
         with open(out, "wb") as f:

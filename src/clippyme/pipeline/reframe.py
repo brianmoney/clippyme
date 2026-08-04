@@ -825,6 +825,12 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
     # normalize once here so the rest of this function only ever sees 'subject'.
     if reframe_mode == 'object':
         reframe_mode = 'subject'
+    # Reframe OFF means a locked frame. The Ken Burns 1.0→zoom_end zoompan is a
+    # slow continuous push, which on a letterboxed clip reads as the picture
+    # drifting for the whole clip (and eats the black bars on the way). The
+    # letterbox_zoom knob is the fixed zoom that mode does support.
+    if reframe_mode == 'disabled':
+        zoom_end = None
     script_start_time = time.time()
     
     # Define temporary file paths based on the output name
