@@ -277,7 +277,12 @@ function OptionsPanel({ opts, set }) {
           <div className="od">{opts.clipsAuto ? 'Auto · ClippyMe picks the best number for the video' : 'Aim for a rough target (a hint, not a hard cap)'}</div>
         </div>
         <div className="r" style={{ gap: 9 }}>
-          {!opts.clipsAuto && <Stepper value={opts.clips} set={(v) => set({ clips: v })} />}
+          {/* No ceiling: the number is a hint in the Gemini prompt, not a cap the
+              pipeline enforces, so the stepper's default max=12 was arbitrary. */}
+          {!opts.clipsAuto && (
+            <Stepper value={opts.clips} set={(v) => set({ clips: v })}
+              max={Infinity} label="Clip count" />
+          )}
           <Segmented value={opts.clipsAuto ? 'auto' : 'custom'}
             onChange={(id) => set({ clipsAuto: id === 'auto' })}
             options={[{ id: 'auto', label: 'Auto' }, { id: 'custom', label: 'Set' }]} />
