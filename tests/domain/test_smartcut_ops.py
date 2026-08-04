@@ -7,6 +7,7 @@ mis-synced or empty render. The transcript/drop-range logic is exercised by
 test_smartcut_manual_trim.py (which imports the same names via smartcut).
 """
 import json
+import os
 
 from clippyme.domain import smartcut_ops as ops
 
@@ -36,7 +37,8 @@ def test_v3_timeline_frame_conversion_and_offsets():
     assert clip["dur"] == 30             # 1.0s * 30
     assert clip["start"] == 0            # first clip lands at output frame 0
     assert clip["name"] == "video"
-    assert clip["src"].endswith("a.mp4") and clip["src"].startswith("/")
+    # Absolutised, but the drive-letter form on Windows is not "/"-prefixed.
+    assert clip["src"].endswith("a.mp4") and os.path.isabs(clip["src"])
 
 
 def test_v3_timeline_output_positions_are_cumulative():

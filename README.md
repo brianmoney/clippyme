@@ -179,6 +179,31 @@ Runtime env overrides (rarely needed):
 | `REFRAME_EURO_MINCUTOFF` / `REFRAME_EURO_BETA` | `0.014` / `0.0008` | 1€ smoother tuning (only when `REFRAME_SMOOTHER=euro`): smoothness floor / speed responsiveness. |
 | `REFRAME_SPRING_RESPONSE` / `REFRAME_SPRING_DAMPING` | `0.18` / `0.82` | Damped-spring smoother tuning (only when `REFRAME_SMOOTHER=spring`): acceleration / velocity decay. |
 | `REFRAME_GLOBAL_SMOOTH` / `REFRAME_GLOBAL_METHOD` | _(off)_ / `savgol` | Opt-in 2-pass trajectory smoothing. ⚠️ `kalman`/`l2` only take effect with `REFRAME_STATIC_AUTO=0` — under the default static-auto policy each scene collapses to one locked crop and the trajectory smoother never runs. |
+| `REFRAME_SPEAKER_SWITCH_MARGIN` | `1.25` | Challenger/current score ratio required before the active-speaker camera switches identity (hysteresis against ping-pong cuts). |
+| `REFRAME_MIN_FACE_RATIO` | `0.10` | Ignore faces smaller than this share of the largest candidate — background heads never steal the frame. |
+| `REFRAME_DIALOGUE_GROUP` | `1` | Keep two similarly-active, separated participants in frame instead of cutting between them. |
+| `REFRAME_DIALOGUE_SCORE_RATIO` / `REFRAME_DIALOGUE_SEPARATION` | `0.88` / `0.28` | Group-framing thresholds: min second/first activity ratio, min horizontal separation (fraction of frame). |
+| `CLIPPYME_JOB_MAX_ATTEMPTS` | `3` | Worker attempts per queued job (bounded 1–10). Exit code `2` = deterministic rejection, never retried. |
+| `CLIPPYME_RENDER_QA_RETRIES` | `1` | Extra render attempts after a **critical** output-QA failure. |
+| `CLIPPYME_KEEP_CHECKPOINTS` | `0` | Keep the hidden transcript/phase checkpoints after a fully successful job. |
+| `CLIPPYME_MAX_DURATION_SECONDS` / `CLIPPYME_MAX_INPUT_GB` | _(disabled)_ | Preflight quotas: reject sources longer / larger than this before any expensive work. |
+| `CLIPPYME_MAX_ESTIMATED_COST_USD` | _(disabled)_ | Reject a job whose estimated Gemini spend exceeds this. Conservative estimate, not a billing promise. |
+| `CLIPPYME_MIN_FREE_DISK_GB` | `1` | Free space that must still remain after the estimated peak disk use. |
+| `CLIPPYME_MAX_CLIPS` | _(disabled)_ | Cap how many ranked candidates are actually rendered. |
+| `CLIPPYME_QA_SIGNAL` | `1` | `0` runs structural output QA only (skips black/freeze/loudness probes) on constrained hosts. |
+
+---
+
+## Runtime resilience & output QA
+
+Queued jobs run through `clippyme.pipeline.orchestrator`, which wraps the proven `pipeline.main` stages with durability and verification. Full reference: [`docs/runtime-quality.md`](docs/runtime-quality.md).
+
+- **Durable lifecycle** — each job dir keeps `.clippyme_runtime.json` (owner-only phase/progress/attempt state) and `.clippyme_checkpoint/` (reusable transcript + phase artefacts). Writes are atomic and fsync'd; the `/videos` mount rejects both. A retry or a backend restart reuses the existing download, transcript, analysis and finished clips instead of redoing them.
+- **Bounded retries** — transient failures back off exponentially up to `CLIPPYME_JOB_MAX_ATTEMPTS`; exit code `2` (validation/preflight rejection) is terminal. Stop/cancel semantics are unchanged.
+- **Preflight** — before transcription or Gemini analysis, the source is probed and runtime, peak disk and Gemini tokens/cost are estimated, so a job that would blow a quota is rejected up front rather than halfway through.
+- **Output QA** — every temporary render is probed (size, duration, stream presence, aspect, black/frozen-frame ratio, mean/peak audio) *before* it atomically replaces the public clip. Structural defects trigger a bounded re-render; signal findings stay as warnings in metadata rather than deleting a usable clip.
+- **Telemetry** — `GET /api/status/{job_id}` may carry `result.operations` (phase, attempt, ETA, verified/failed clips, host CPU/RAM/disk, per-stage durations, QA summaries), surfaced in the processing view. The job log keeps a single replaceable `[runtime]` line so polling can't grow it without bound.
+- **Regression suites** — `python -m clippyme.pipeline.quality_suite <manifest>.json --output report.json` replays the production QA policy over versioned fixture clips; exit `0` pass, `1` quality regression, `2` invalid/unsafe manifest. Manifest paths are confined to the manifest directory, so it is safe to run in CI.
 
 ---
 
@@ -195,7 +220,11 @@ src/clippyme/
     schemas.py        Pydantic request models (strict validation)
     security.py       Trusted-origin / rate-limit / API-token gates, job-id validation
   pipeline/           Heavy lifters (main.py imports cv2/torch → pure logic lives in the *_ops modules)
+    orchestrator.py   Entrypoint for queued jobs: preflight → checkpointed main.py stages → output QA
     main.py           CLI orchestrator: download → transcribe → Gemini → reframe → postprocess
+    preflight.py      Pre-spend probe: duration/size/disk/Gemini-cost estimate + quota rejection
+    media_qa.py       ffprobe-backed clip verification (streams, aspect, black/freeze, loudness)
+    quality_suite.py  Manifest-driven regression runner replaying the production QA policy
     run_ops.py        Pure entrypoint helpers (output-dir resolve, cut-command argv) → host-tested
     gemini_request.py Pure Gemini prompt template + pricing + cost/retry classification → host-tested
     gemini_parser.py  5-level JSON parsing chain + Pydantic validation + dedupe
@@ -212,7 +241,9 @@ src/clippyme/
     clip_resolve.py   Shared resolve_clip(): job dir → metadata → clip entry → path (used by every per-clip route)
     job_submission.py · job_runner.py · job_worker.py   Submit + per-job subprocess loop + queue dispatch/cleanup
     job_journal.py · job_control.py · job_actions.py    Crash-safe journal + recovery, status machine, cancel/stop
-    job_results.py · job_artifacts.py   Result loaders + main.py command builder; atomic metadata IO
+    job_results.py · job_artifacts.py   Result loaders + orchestrator command builder; atomic metadata IO
+    runtime_state.py  Durable per-job phase/progress/attempt state + checkpoint dir (atomic, fsync'd)
+    uploads.py        Local-file upload intake (size cap, safe destination paths)
     compose.py        Grade → Subtitles → Smart Cut → Hook → Logo compose pipeline (pass-fused)
     smartcut.py       Two-stage filler-word + audio polish (auto-editor v3 timeline)
     smartcut_ops.py   Pure silence/filler/timeline math (host-tested), re-exported by smartcut.py

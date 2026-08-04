@@ -26,7 +26,11 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   `job_actions.py` (cancel/stop bodies), `job_journal.py` (crash-safe queue
   journal + startup recovery), `job_worker.py` (queue dispatch + retention
   cleanup), `job_results.py` (`build_main_cmd`, partial/final result loaders),
-  `job_artifacts.py` (atomic metadata IO), `job_control.py` (status machine +
+  `job_artifacts.py` (atomic metadata IO), `runtime_state.py` (durable per-job
+  phase/progress/attempt state in `<job>/.clippyme_runtime.json` + the
+  `.clippyme_checkpoint/` artefact dir — atomic + fsync'd, owner-only),
+  `uploads.py` (local-file intake: size cap, safe destination paths),
+  `job_control.py` (status machine +
   psutil process-tree suspend/resume), `publish_service.py` (Zernio publish
   flow), `compose.py` (layer pipeline), `clip_endpoints.py` (smart-cut runner,
   history restore), `smartcut.py` (impure orchestrator: ffmpeg/auto-editor
@@ -49,7 +53,15 @@ Python backend is src-layout under `src/clippyme/` (`pip install -e .`):
   `grade.py`, `clip_qa.py`, `clip_edit_ai.py`, `history_service.py`,
   `encode.py` (single source of x264 settings for every render pass),
   `errors.py` (domain exceptions mapped to HTTP by one app-level handler).
-- `pipeline/` — `main.py` (CLI orchestrator), `reframe.py` (orchestrator:
+- `pipeline/` — `orchestrator.py` (**the entrypoint queued jobs actually run**:
+  preflight → checkpointed `main.py` stages → per-render output QA; owns
+  retries, resume and `.clippyme_runtime.json`), `preflight.py` (pure-ish
+  pre-spend probe: duration/size/disk/Gemini-cost estimate + quota rejection,
+  exit code 2 = never retried), `media_qa.py` (ffprobe clip verification:
+  streams, aspect, black/freeze ratio, loudness), `quality_suite.py`
+  (manifest-driven regression runner replaying the production QA policy —
+  path-confined to the manifest dir), `main.py` (CLI orchestrator — still owns
+  transcription/Gemini/cut/reframe), `reframe.py` (orchestrator:
   scene analysis, frame strategies, render loops, `process_video_to_vertical`),
   `reframe_track.py` (pure tracking classes — host-tested, no cv2),
   `reframe_detect.py` (YOLO/MediaPipe detectors), `reframe_ops.py` (pure
@@ -120,10 +132,20 @@ caching (tagged `clippyme-backend` so compose reuses it).
 **Job lifecycle**: `POST /api/process|/api/batch` → `build_main_cmd` →
 `submit_job` (in-memory `jobs` dict + `asyncio.Queue`) → `process_queue`
 dispatch (semaphore, `MAX_CONCURRENT_JOBS`) → `run_job` spawns
-`python -m clippyme.pipeline.main` as a subprocess and polls partial results
-every 2s. Statuses: `queued → processing ⇄ paused → {completed, failed,
+`python -m clippyme.pipeline.orchestrator` as a subprocess and polls partial
+results every 2s. Statuses: `queued → processing ⇄ paused → {completed, failed,
 cancelled, stopped}` (`job_control.py` owns the guards). `stopped` keeps
 finished clips; `cancelled` rmtree's everything.
+
+**Runtime resilience**: the orchestrator (not `main.py`) is what queued jobs
+execute. It preflights the source, keeps durable state + reusable artefacts in
+the job dir, retries transient failures with bounded backoff
+(`CLIPPYME_JOB_MAX_ATTEMPTS`, exit code `2` = deterministic rejection, never
+retried), resumes after a backend restart when state + source are still safe,
+and QA-probes every temporary render before it atomically replaces the public
+clip (structural defect → bounded re-render; signal finding → metadata
+warning). Telemetry rides `result.operations` on the status response. Full
+reference: `docs/runtime-quality.md`.
 
 **Job journal**: every status transition writes `data/jobs_journal.json`
 (atomic, ACTIVE jobs only — never env secrets/Popen/logs). On startup,
@@ -256,5 +278,7 @@ injection).
   evidence per change.
 - `docs/reframe-improvements-research.md` — the comfort-mode research and
   measured A/B numbers.
+- `docs/runtime-quality.md` — the durable job lifecycle, retry/preflight/QA
+  env knobs and the regression quality-suite manifest format.
 - `docs/architecture-history.md` — summary of major refactors (what moved
   where and why); the pre-rewrite CLAUDE.md is in git history.

@@ -1,172 +1,95 @@
-# Task 5 report — frontend: monitor runtime panel
+# Task 5 report: Consolidated folder, compose-on-completion, title filenames
 
-## Status: complete
+**Status:** COMPLETE
+**Commit:** `5727646` (branch `feat/monitor-consolidate-clips`)
+**Tests:** `tests/domain/test_live_monitor.py` 92 passed; full host suite
+`pytest -m "not integration"` 980 passed, 34 deselected; ruff (E9,F63,F7,F82) clean.
 
-## Files changed
-- `dashboard/src/redesign/realApi.js` — added `updateMonitorConfig(id, partial)` and
-  `setMonitorPublishing(id, enabled)`, same fetch/error style as the existing
-  live-monitor helpers (`err.detail` unwrap → `Error`).
-- `dashboard/src/redesign/live.jsx` — start-form catchup select, optional subtitle
-  override drawer, running-monitor "Settings" expandable + publish toggle.
-- `dashboard/src/redesign/live.test.jsx` — 7 new tests.
-- `dashboard/src/redesign/primitives.jsx` — `Switch` gained `disabled` + `label`
-  (aria-label) props, additive, needed because the page now has 3+ switches and
-  tests/screen-readers need to disambiguate them.
-- `dashboard/src/hooks/useLiveMonitorStatus.js` — now returns `[monitors, refresh]`
-  instead of a bare array, so callers (only `live.jsx`) can force an immediate
-  status refetch after a config/publishing mutation instead of waiting up to 5s
-  for the next poll.
+> Note: this file previously held an unrelated (frontend monitor-panel) report;
+> it was the designated destination for THIS backend task, so it was overwritten.
 
-## Language deviation from the brief
-Brief said "Italian labels to match the existing UI language of live.jsx" — but
-`live.jsx`'s current labels (and `live.test.jsx`'s assertions) are all **English**
-("Channel", "Start monitor", "Segment (min)", etc. — verified by reading the file
-and its test). I matched the file's actual current language (English) rather than
-the brief's Italian assumption, since CLAUDE.md/the code itself is the source of
-truth over a stale brief note. All new labels ("Catchup", "Subtitles (customize)",
-"Settings", "Zernio auto-publish", "Apply") are English to stay consistent.
+## What changed (`src/clippyme/domain/live_monitor.py`)
 
-## Status fields consumed
-`GET /api/live-monitor/status` → `status()` in `live_monitor.py` (read directly,
-not just from the reports) exposes `publishing_enabled` (bool) and
-`pending_publish` (already an **int count**, not the raw list) — used as-is for
-the toggle and the "Paused — N clip(s) waiting" copy. `status()` does **not**
-include `config` (only `snapshot()` does, which isn't a public endpoint), so per
-the brief's fallback instruction the "Settings" drawer is local-only form state,
-seeded blank per monitor — "Apply" sends only fields the user actually typed
-into (empty-string/blank fields are omitted from the partial), never clobbering
-server state with blanks. This is called out in a code comment on
-`MonitorSettings`.
+- **`allocate_clip_filename(title_template, clip, existing, counter)`** — new pure,
+  module-level helper (verbatim per brief). Module-level import
+  `from clippyme.pipeline.run_ops import sanitize_windows_basename` (run_ops is
+  stdlib-only, host-safe).
+- **`__init__`** — `self._clip_dir = output_dir/"monitor_"+id.replace(":","_")`
+  (derived, not persisted) and `self._name_counter = 0`.
+- **`snapshot()`/`restore()`** — `name_counter` persisted (mirrors
+  `pending_publish`/`publishing_enabled`); folder path derived, not persisted.
+- **`_consolidate_clips(job_id, clips)`** — composes every good clip into
+  `self._clip_dir`, title-named via the continuous counter, returns
+  `[{"job_id","clip","composed_path"}]`; per-clip failures logged, not fatal.
+- **`_await_and_publish`** — exhaustion handling (`gemini_exhausted`) PRESERVED;
+  the direct publish loop replaced with consolidate-then-publish-consolidated.
+- **`_compose_for_publish(job_id, clip, base_path=None)`** — `base_path=None`
+  resolves the raw clip and composes, RAISING on failure (consolidation handles
+  it per-clip); a passed `base_path` keeps the old fallback-on-failure behavior
+  (used only by the drain-recompose path).
+- **`_publish_one(entry)`** — signature changed from `(job_id, clip)` to
+  `(entry)`. Uploads `entry["composed_path"]` directly (no re-compose), dedupes
+  on the RAW clip path, queues the entry when paused; recomposes via
+  `_compose_for_publish` only if a restored entry's `composed_path` vanished.
+- **`_drain_pending`** — passes the whole entry to `_publish_one`.
+- **`_delete_clip_artifacts` call site** — now passes `clip_path` for the
+  upload_path arg (was `upload_path`). The consolidated composed file is the
+  durable deliverable and is deliberately KEPT; the job-dir composed file is
+  still cleaned via the existing `composed_clip_{idx}.mp4` target.
+  `_delete_clip_artifacts` itself is unchanged.
 
-## Compose override shape
-Read `build_monitor_compose` (`live_monitor.py:109-149`): override is
-`{toggles?, hook_params?, subtitle_params?, banner?}`, shallow-merged over
-defaults. Both the start payload and the config-Applica payload send
-`{compose: {subtitle_params: {...}}}` using the exact `SubtitleControls`
-vocabulary (`mode, preset, font, font_color, outline_color, font_size,
-border_width, bg, position, align, offset_y`) — no remapping needed since
-`build_monitor_compose`'s `subtitle_params` merges directly into the compose
-layer's kwargs, and `SubtitleControls` (unlike create.jsx's `SubConfig`
-adapter) already speaks that vocabulary natively.
+## Existing-test signature adjustments (`tests/domain/test_live_monitor.py`)
 
-`SubtitleControls` reused via `variant="create"` (only two variants exist,
-`create`/`edit`; `create`'s chrome — `.opt`/`.od`/`.field` — matches
-`live.jsx`'s existing form classNames, `edit` doesn't).
+`_publish_one` changed from `(job_id, clip)` to `(entry)`. Minimal updates:
 
-## Test evidence
-Command: `cd dashboard && npm test && npm run lint && npm run build`
+- `_publishing_monitor` helper's `_no_compose` gained a `base_path=None` default.
+- Six publish tests (`test_publish_one_retries_on_429_then_succeeds`,
+  `_rolls_start_date_on_daily_limit`, `_non_429_fails_without_retry`,
+  `test_successful_publish_deletes_clip_files_and_empty_dir`,
+  `_keeps_dir_and_marks_metadata_when_clips_remain`,
+  `test_deletion_failure_does_not_raise...`) now build
+  `entry = {"job_id","clip","composed_path": <existing file>}` and call
+  `_publish_one(entry)`.
+- `test_paused_publish_queues_instead_of_publishing` — asserts the queued /
+  snapshot / restored `_pending_publish` equals `[entry]` (now carries
+  `composed_path`).
+- `test_resume_drains_pending_in_order_with_spacing` and
+  `test_restored_monitor_with_pending_and_enabled_drains_on_start` — pending
+  entries now include `composed_path`.
 
-`npm test` tail: `Test Files  21 passed (21)` / `Tests  149 passed (149)`
-(13 pre-existing `live.test.jsx` tests unchanged and still pass, +6 new tests
-+1 extra `catchup defaults to backfill` sanity test = 19 total in that file).
-
-`npm run lint`: clean, no output (0 warnings/errors under
-`eslint.a11y.config.js`, `--max-warnings 0`).
-
-`npm run build`: `✓ 1834 modules transformed` / `✓ built in 3.98s`.
-
-New tests added to `live.test.jsx`:
-- `catchup select value rides the start payload`
-- `catchup defaults to backfill`
-- `subtitle override section untouched → start payload has no compose key`
-- `subtitle override section switched on → start payload carries a compose.subtitle_params key`
-- `publishing toggle calls setMonitorPublishing with the flipped value`
-- `config Applica posts only changed/allowed fields (instructions + caption_template)`
-
-(also had to add `listFonts: vi.fn(async () => ({ fonts: [] }))` to the
-`./realApi` mock in `live.test.jsx` — `SubtitleControls` pulls fonts via
-`useFontList()`, which the pre-existing mock never needed since the drawer
-wasn't rendered there before.)
-
-## Decisions
-- `useLiveMonitorStatus` return-shape change (array → `[monitors, refresh]`
-  tuple) is a breaking signature change, but the hook has exactly one
-  consumer (`live.jsx`), verified via grep before changing it.
-- Did not add per-clip pending list, only the count already returned by
-  `status()` — brief only asked for "pending count when paused."
-- `Btn`/`Switch`/`Segmented` reused as-is (primitives.jsx untouched apart
-  from the additive `disabled`/`label` props on `Switch`); no shadcn, no new
-  deps.
-- `RedesignApp.jsx` untouched — no wiring needed there.
-- `eslint.config.js` untouched.
+Added the 3 new pure allocator tests verbatim from the brief.
 
 ## Concerns
-- The Settings drawer's timing fields reuse `clampMonitorTimings(a, b, c)`
-  by calling it three times with the other two args zeroed, just to reuse
-  the existing minutes→seconds clamp+bounds logic without writing three new
-  one-off helpers. Slightly odd call shape but avoids duplicating the
-  60/3600, 0/7200, 0/86400 bounds a second time.
-- Because `status()` doesn't expose `config`, the Settings drawer can't show
-  a monitor's *current* instructions/templates/timings — only accepts new
-  values to push. If a future task exposes `config` via `status()`, the
-  drawer should be seeded from it instead of starting blank (noted inline
-  in the component's comment).
 
-## Fix wave
+- None blocking. The per-monitor folder (`monitor_<id>/`) is now a durable,
+  growing library of composed clips, kept intentionally after publish. No
+  retention/cleanup exists for it (out of scope); add one if disk growth matters.
 
-Addressed the review's one Important finding plus the drawer-blank note.
+## Review fixes (commit `604ed4f`)
 
-1. **Classic-mode subtitle key translation** (`live.jsx:231,250`). Both call
-   sites sent the raw `SubtitleControls` value straight through as
-   `compose.subtitle_params`, but `compose.py`'s classic branch
-   (`_apply_subtitles`) reads `border_color`/`bg_opacity`/`bg_color`, not
-   `outline_color`/the boolean `bg`. In classic mode this made the
-   Background-box switch a silent no-op and dropped any stroke-color
-   override. Extracted the translation that already existed inline in
-   `captions.jsx:147-154` / `realApi.js:412-419` into a single new helper,
-   `dashboard/src/lib/subtitleComposeParams.js` (`toComposeSubtitleParams`),
-   and pointed both `live.jsx` call sites (start payload + config Applica) at
-   it. Left `captions.jsx`/`realApi.js` untouched — their option shapes
-   differ enough (pre-seeded base object / individual `opts.subX` fields vs.
-   a single `SubtitleControls` value) that folding them in wasn't a trivial,
-   risk-free diff; not worth it under the Important finding's scope.
-   Karaoke mode was already correct and is unaffected (pass-through, same as
-   before).
+Addressed all three review findings:
 
-2. **`status()` config + drawer seeding.** Added the same allow-list
-   snapshot() uses (`_SNAPSHOT_CONFIG_FIELDS`, no secrets by construction) to
-   `LiveMonitor.status()` in `src/clippyme/domain/live_monitor.py`. The
-   Settings drawer (`MonitorSettings` in `live.jsx`) now seeds its fields —
-   instructions/title/caption templates, the three minute inputs, and the
-   subtitle override switch + value — from `monitor.config` when it mounts
-   (drawer only mounts on open, so a `useState` lazy initializer is enough;
-   no extra effect needed). Added `fromComposeSubtitleParams` (reverse of
-   `toComposeSubtitleParams`, same new lib file) to map a persisted
-   classic-mode `compose.subtitle_params` back onto the `SubtitleControls`
-   vocabulary for editing. "Apply" behaviour is unchanged — it still sends
-   only the touched fields (now pre-filled with the current values rather
-   than blank, so re-applying an untouched field is a same-value no-op, not
-   a fabricated one).
+1. **IMPORTANT — `_drain_pending` lost entries on a raising recompose.** The
+   per-entry `_publish_one(entry)` call is now wrapped in try/except: on
+   exception (e.g. a restored entry whose `composed_path` vanished →
+   `_compose_for_publish(base_path=None)` raises) it logs via `logger.exception`
+   and re-appends the popped entry to `self._pending_publish` (then persists),
+   so it retries rather than being lost. A single bad entry no longer aborts
+   draining the rest — consistent with `_await_and_publish`'s guard.
+2. **MINOR (atomicity) — `_consolidate_clips` copy is now atomic.**
+   `shutil.copyfile(composed, dest+".tmp")` then `os.replace(dest+".tmp", dest)`,
+   so a crash mid-copy never orphans a partial `.mp4` (which would also
+   permanently reserve its title filename).
+3. **MINOR (coverage) — new host test**
+   `test_drain_recomposes_missing_composed_path_and_survives_failure`: queues a
+   pending entry whose `composed_path` is missing plus a good sibling, spies
+   `_compose_for_publish` (raises once, then succeeds), and asserts recompose is
+   invoked, the sibling publishes, the failing entry is retried (not lost), and
+   the queue fully drains.
 
-### Files changed
-- `src/clippyme/domain/live_monitor.py` — `LiveMonitor.status()` gained a
-  `config` key.
-- `dashboard/src/lib/subtitleComposeParams.js` — new. `toComposeSubtitleParams`
-  / `fromComposeSubtitleParams`.
-- `dashboard/src/redesign/live.jsx` — both compose-payload call sites route
-  through `toComposeSubtitleParams`; `MonitorSettings` seeds from
-  `monitor.config` via `fromComposeSubtitleParams` + a `secToMin` helper.
-- `dashboard/src/redesign/live.test.jsx` — 3 new tests: classic-mode
-  translation in the start payload, classic-mode translation in the config
-  Applica payload, drawer prefilled from `status().config`.
-- `tests/domain/test_live_monitor.py` — 1 new test:
-  `test_monitor_status_includes_config_allow_list` (asserts `status()`'s
-  `config` is exactly `_SNAPSHOT_CONFIG_FIELDS`, nothing more).
+Cosmetic "counter burned on compose failure" Minor left as-is per instruction.
 
-### Verification
-- Frontend (host): `npm test` — 21 files / 152 tests passed (incl. the 3
-  new). `npm run lint` — clean, 0 warnings. `npm run build` — succeeded.
-- Backend (container, run from the `/workspace` bind mount, not the stale
-  `/app` image copy): `python -m pytest -m "not integration" -q` — 961
-  passed, 34 deselected. `ruff check src/clippyme tests --select
-  E9,F63,F7,F82` — all checks passed.
-
-### Concerns
-- None outstanding for the Important finding. The two Minor notes from the
-  review (the `clampMonitorTimings` triple-call shape, the hook's tuple
-  return-shape change) were informational/non-blocking and out of this fix
-  wave's scope — left as-is.
-- `fromComposeSubtitleParams` is a best-effort reverse mapping for UI
-  seeding only (never sent back to the server verbatim — Apply always
-  re-translates through `toComposeSubtitleParams`), so there's no risk of a
-  stale/lossy round-trip reaching the backend.
+### Re-run test output
+- `tests/domain/test_live_monitor.py` — 93 passed.
+- Full host suite `pytest -m "not integration" -q` — 981 passed, 34 deselected.
+- ruff (E9,F63,F7,F82) — all checks passed.
