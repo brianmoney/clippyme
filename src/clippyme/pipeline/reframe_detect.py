@@ -5,20 +5,128 @@ the per-frame detectors. Split out of ``reframe.py`` so the pure tracking
 classes (``reframe_track``) stay host-importable; ``reframe.py`` re-exports
 these names for back-compat.
 """
+import logging
+import os
+import shutil
+import tempfile
+import time
+import urllib.request
+
 import cv2
 import mediapipe as mp
 from ultralytics import YOLO
 
 from clippyme.pipeline.hardware import DEVICE
 
+logger = logging.getLogger(__name__)
+
+_YOLO_MODEL_URL = (
+    "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt"
+)
+
 _yolo_model = None
+_yolo_model_failed = False
+
+
+def _yolo_weights_path() -> str:
+    """Resolve a stable, persistent path for the YOLOv8n weights file.
+
+    Priority: ``CLIPPYME_YOLO_PATH`` env override, else a persistent cache
+    under ``data/cache/ultralytics``. Never a bare CWD-relative name, so a
+    cold download survives across jobs/processes instead of being re-attempted
+    (and re-failed) for every clip.
+    """
+    override = (os.environ.get("CLIPPYME_YOLO_PATH") or "").strip()
+    if override:
+        return os.path.abspath(override)
+    return os.path.abspath(os.path.join("data", "cache", "ultralytics", "yolov8n.pt"))
+
+
+def _download_weights(url: str, target: str, retries: int = 5) -> bool:
+    """Download ``url`` to ``target`` with retry/backoff, atomically.
+
+    Pure stdlib (urllib) so it works regardless of curl availability. The
+    payload is written to a unique temp file in the target directory and
+    ``os.replace``d into place only when complete, so a partial/interrupted
+    download never poisons the cache and concurrent warmers can't corrupt each
+    other. Returns True only when the file is on disk and non-empty.
+    """
+    target_dir = os.path.dirname(target)
+    os.makedirs(target_dir, exist_ok=True)
+    for attempt in range(1, retries + 1):
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(prefix=".yolov8n-", suffix=".pt.part", dir=target_dir)
+            with os.fdopen(fd, "wb") as out, urllib.request.urlopen(url, timeout=60) as resp:
+                shutil.copyfileobj(resp, out)
+            if os.path.getsize(tmp_path) > 0:
+                os.replace(tmp_path, target)
+                return True
+        except Exception as exc:  # noqa: BLE001 — any network/IO error is retryable
+            logger.warning(
+                "YOLOv8n weights download attempt %d/%d failed: %s", attempt, retries, exc
+            )
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        if attempt < retries:
+            time.sleep(min(2 ** attempt, 20))
+    return False
+
+
+def ensure_yolo_weights() -> bool:
+    """Ensure the YOLOv8n weights file is on disk (download if missing).
+
+    Returns True when the weights are available for YOLO to load. Used to
+    pre-warm the persistent cache ahead of rendering so a cold, flaky download
+    can't stall a clip mid-render. Also reuses a weights file that a pre-fix
+    version of ClippyMe downloaded into the job CWD.
+    """
+    target = _yolo_weights_path()
+    if os.path.exists(target) and os.path.getsize(target) > 0:
+        return True
+    legacy_cwd = os.path.join(os.getcwd(), "yolov8n.pt")
+    if os.path.exists(legacy_cwd) and os.path.getsize(legacy_cwd) > 0:
+        try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy2(legacy_cwd, target)
+            return True
+        except OSError:
+            pass
+    return _download_weights(_YOLO_MODEL_URL, target)
+
 
 def _get_yolo_model():
-    """Lazy-load YOLOv8n on first body-detection call."""
-    global _yolo_model
-    if _yolo_model is None:
-        _yolo_model = YOLO('yolov8n.pt')
-        _yolo_model.to(DEVICE)
+    """Lazy-load YOLOv8n on first body-detection call.
+
+    Degrades gracefully: if the weights can't be fetched (offline, flaky
+    download) or the model can't be loaded, this logs once and returns None
+    instead of raising — callers fall back to face-only tracking / letterbox
+    rather than letting the clip render crash. The failure is cached so we
+    don't hammer the network on every frame.
+    """
+    global _yolo_model, _yolo_model_failed
+    if _yolo_model is None and not _yolo_model_failed:
+        path = _yolo_weights_path()
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            if not ensure_yolo_weights():
+                _yolo_model_failed = True
+                logger.warning(
+                    "YOLOv8n weights unavailable (%s); person-detection fallback disabled", path
+                )
+                return None
+        try:
+            _yolo_model = YOLO(path)
+            _yolo_model.to(DEVICE)
+        except Exception:  # noqa: BLE001
+            _yolo_model_failed = True
+            logger.exception(
+                "Failed to load YOLOv8n from %s; person-detection fallback disabled", path
+            )
+            return None
     return _yolo_model
 
 mp_face_detection = mp.solutions.face_detection
@@ -131,7 +239,10 @@ def detect_person_yolo(frame):
     Fallback: Detect largest person using YOLO when face detection fails.
     Returns [x, y, w, h] of the person's 'upper body' approximation.
     """
-    results = _get_yolo_model()(frame, verbose=False, classes=[0])  # class 0 is person
+    model = _get_yolo_model()
+    if model is None:
+        return None
+    results = model(frame, verbose=False, classes=[0])  # class 0 is person
     
     if not results:
         return None

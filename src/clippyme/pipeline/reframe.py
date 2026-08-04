@@ -50,6 +50,7 @@ from clippyme.pipeline.reframe_detect import (  # noqa: F401
     compute_mouth_aspect_ratio,
     detect_face_candidates,
     detect_person_yolo,
+    ensure_yolo_weights,
 )
 from clippyme.pipeline.reframe_track import (  # noqa: F401
     DetectionSmoother,
@@ -135,6 +136,8 @@ def _weighted_object_general_crop(frame, output_width, output_height, weights=No
         if crop_w < 1 or crop_w >= orig_w:
             return None  # already narrower than target → nothing to crop
         model = _get_yolo_model()
+        if model is None:
+            return None  # YOLO unavailable → fall through to letterbox
         results = model(frame, verbose=False)  # all classes, single inference
         names = getattr(model, "names", {}) or {}
         boxes_xyw = []
@@ -365,22 +368,30 @@ def create_frameshift_frame(frame, output_width, output_height, smoother=None):
                 pass
 
         model = _get_yolo_model()
-        names = getattr(model, "names", {}) or {}
-        for result in model(frame, verbose=False):
-            for box in result.boxes:
-                cls_name = str(names.get(int(box.cls[0]), "")).lower()
-                if cls_name == "person":
-                    w = person_w
-                else:
-                    w = extra.get(cls_name, default_w)
-                if w <= 0:
-                    continue
-                x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
-                area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-                if area <= 0:
-                    continue
-                conf = float(box.conf[0]) if box.conf is not None else 1.0
-                boxes.append(((x1 + x2) / 2.0, (y1 + y2) / 2.0, w * area * conf))
+        if model is None:
+            # YOLO unavailable → no person/object detections; still honour a
+            # face-only centroid below (falls through to black-pad when empty).
+            names = {}
+            boxes_yolo = []
+        else:
+            names = getattr(model, "names", {}) or {}
+            boxes_yolo = []
+            for result in model(frame, verbose=False):
+                for box in result.boxes:
+                    cls_name = str(names.get(int(box.cls[0]), "")).lower()
+                    if cls_name == "person":
+                        w = person_w
+                    else:
+                        w = extra.get(cls_name, default_w)
+                    if w <= 0:
+                        continue
+                    x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
+                    area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+                    if area <= 0:
+                        continue
+                    conf = float(box.conf[0]) if box.conf is not None else 1.0
+                    boxes_yolo.append(((x1 + x2) / 2.0, (y1 + y2) / 2.0, w * area * conf))
+        boxes.extend(boxes_yolo)
 
         if crop_w < 1 or crop_w >= orig_w:
             # Source already at/under the target width → black-pad, always.
@@ -829,17 +840,46 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
     16/9 for square/landscape jobs). Passed explicitly by main.py per job —
     this replaced the old ``reframe.ASPECT_RATIO`` module global.
     """
+    base_name = os.path.splitext(final_output_video)[0]
+    temp_files = [
+        f"{base_name}_temp_video.mp4",
+        f"{base_name}_temp_audio.aac",
+        f"{base_name}_temp_cfr_input.mp4",
+    ]
+    try:
+        return _process_video_to_vertical_impl(
+            input_video,
+            final_output_video,
+            temp_files,
+            reframe_mode=reframe_mode,
+            zoom_end=zoom_end,
+            aspect_ratio=aspect_ratio,
+        )
+    finally:
+        # A crash mid-render (e.g. YOLO weights unavailable) or an early return
+        # must not orphan the temp video/audio/cfr files in the job dir. The
+        # impl also removes them on its success path; this makes every failure
+        # path safe too.
+        for path in temp_files:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+
+
+def _process_video_to_vertical_impl(input_video, final_output_video, temp_files,
+                                    reframe_mode='auto', zoom_end=None,
+                                    aspect_ratio: float = 9 / 16):
+    """The render body; ``temp_files`` (video/audio/cfr) lifecycle is owned by
+    :func:`process_video_to_vertical` so all exit paths clean up."""
     # 'object' is the legacy name for the FrameShift face-first 'subject' mode —
     # normalize once here so the rest of this function only ever sees 'subject'.
     if reframe_mode == 'object':
         reframe_mode = 'subject'
     script_start_time = time.time()
-    
-    # Define temporary file paths based on the output name
-    base_name = os.path.splitext(final_output_video)[0]
-    temp_video_output = f"{base_name}_temp_video.mp4"
-    temp_audio_output = f"{base_name}_temp_audio.aac"
-    temp_cfr_input = f"{base_name}_temp_cfr_input.mp4"
+
+    temp_video_output, temp_audio_output, temp_cfr_input = temp_files
 
     # Clean up previous temp files if they exist
     if os.path.exists(temp_video_output): os.remove(temp_video_output)

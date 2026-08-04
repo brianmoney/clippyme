@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -608,6 +609,17 @@ def run(argv: list[str] | None = None) -> int:
         _configure_overrides(args)
         from clippyme.pipeline import main as legacy
 
+        # Pre-warm the YOLOv8n weights into the persistent cache on a
+        # background thread so the (historically flaky) first download overlaps
+        # with transcription/analysis instead of stalling the first render.
+        # Failure is non-fatal: _get_yolo_model degrades to face-only/letterbox
+        # when the model is unavailable, so a cold network miss can no longer
+        # blank a clip.
+        yolo_warm = threading.Thread(
+            target=legacy.ensure_yolo_weights, daemon=True, name="yolo-weights-warm"
+        )
+        yolo_warm.start()
+
         aspect_ratio = _expected_aspect(args.aspect)
         input_video, video_title = _prepare_input(args, output_dir, state, legacy)
         _preflight, duration = _run_preflight(args, input_video, output_dir, state, legacy)
@@ -636,6 +648,13 @@ def run(argv: list[str] | None = None) -> int:
             )
             print("🚫 No valid clips generated for this job", flush=True)
             return 0
+
+        # Give the YOLO pre-warm a bounded window to finish (it runs alongside
+        # transcription/analysis). Whatever it achieved is on disk in the
+        # persistent cache; _get_yolo_model falls back to its own download or
+        # graceful degradation if it didn't complete.
+        if yolo_warm.is_alive():
+            yolo_warm.join(timeout=90)
 
         ready = 0
         for index, clip in enumerate(clips):

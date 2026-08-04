@@ -46,6 +46,7 @@ from clippyme.pipeline.reframe import (  # noqa: E402,F401
     SmoothedCameraman,
     SpeakerTracker,
     _get_yolo_model,
+    ensure_yolo_weights,
 )
 # Transcript cache helpers live in a stdlib-only module (host-testable). Aliased
 # to the historical private names so the rest of main.py is unchanged.
