@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 // Vitest runs with a jsdom environment, so window.location.origin is real —
 // the old plain-Node `globalThis.window` stub is gone.
-import { optsToPreselections, clipVideoSrc, clipPreviewSrc, fmtDuration, exportClip } from './realApi.js';
+import { optsToPreselections, clipVideoSrc, clipPreviewSrc, fmtDuration, exportClip, deleteHistoryJob } from './realApi.js';
 
 // --- optsToPreselections: the Create-tab → backend translation layer --------
 
@@ -115,6 +115,41 @@ test('exportClip composes against clip.original_index, not the array position', 
     await exportClip('job-1', 1, clip, state, {});
     assert.equal(calls.length, 1);
     assert.match(String(calls[0]), /\/api\/compose\/job-1\/2$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// --- history delete must hit the backend (files off disk), not just the
+// localStorage entry — a row dismissal that left the output/ dir behind was
+// silently leaking storage.
+
+test('deleteHistoryJob issues a DELETE and resolves on 200', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url, init = {}) => {
+    calls.push({ url, method: init.method });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+  };
+  try {
+    const body = await deleteHistoryJob('abc-123');
+    assert.equal(body.success, true);
+    assert.equal(calls.length, 1);
+    assert.match(String(calls[0].url), /\/api\/history\/abc-123$/);
+    assert.equal(calls[0].method, 'DELETE');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('deleteHistoryJob surfaces non-OK status so callers can handle 404/409', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 409 });
+  try {
+    let caught = null;
+    try { await deleteHistoryJob('abc-123'); } catch (e) { caught = e; }
+    assert.ok(caught, 'expected deleteHistoryJob to throw on non-OK');
+    assert.equal(caught.status, 409);
   } finally {
     globalThis.fetch = originalFetch;
   }
