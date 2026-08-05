@@ -9,13 +9,16 @@ import path from 'path'
 // (see RedesignApp.jsx). Build-only via `apply: 'build'` because the Vite dev
 // server / HMR needs 'unsafe-eval', which we never want shipped. 'unsafe-inline'
 // is allowed for styles only (Tailwind v4 / React inline styles), not scripts.
+// Remote origins the app genuinely loads: Google Fonts (tokens.css @import →
+// stylesheet from fonts.googleapis.com, font files from fonts.gstatic.com)
+// and the simpleicons CDN used for the TikTok/Instagram/YouTube marks.
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https://cdn.simpleicons.org",
   "media-src 'self' blob:",
-  "font-src 'self' data:",
+  "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self'",
   "base-uri 'self'",
   "form-action 'self'",

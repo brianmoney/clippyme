@@ -36,11 +36,12 @@ export function buildPlatformTargets(plats, accounts, platMap) {
 
 // Convert the form's minute fields into the seconds payload, clamped to the
 // backend schema bounds (segment 60–3600s, prelive 0–7200s, gap 0–86400s).
-// A cleared/garbage number input yields NaN (Number('') === 0, Number('x') is
-// NaN) which used to reach the API as 0/null and 422 — clamp instead so Start
-// always sends a valid request.
+// A cleared number input is '' (NOT NaN — Number('') === 0): treat it as
+// untouched and use the schema default, same as clipSelectionPayload, so a
+// blanked field never silently becomes a 60-second segment.
 export function clampMonitorTimings(segmentMin, preliveMin, minGapMin) {
   const secs = (v, fallback) => {
+    if (v === '' || v === null || v === undefined) return fallback;
     const n = Math.round(Number(v) * 60);
     return Number.isFinite(n) ? n : fallback;
   };
