@@ -220,7 +220,7 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
     setProfiles((ps) => [...ps, {
       id: '', name: '', api_key: '', is_default: ps.length === 0,
       accounts: { tiktok: '', instagram: '', youtube: '' },
-      timezone: zernio?.timezone || 'Europe/Rome',
+      timezone: zernio?.timezone || 'America/New_York',
     }]);
   };
 

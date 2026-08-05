@@ -98,7 +98,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
   // timezone, override per batch here).
   const [perDay, setPerDay] = useState(1);
   const [daysFromNow, setDaysFromNow] = useState(0);
-  const [tz, setTz] = useState('Europe/Rome');
+  const [tz, setTz] = useState('America/New_York');
   const tzTouched = useRef(false);
 
   useEffect(() => {
@@ -155,7 +155,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
       platforms: targets,
       schedule_mode: scheduleOn ? 'auto' : 'now',
       ...(scheduleOn ? { start_date: localDatePlus(daysFromNow + Math.floor(batchPos / Math.max(1, perDay))) } : {}),
-      timezone: tz.trim() || 'Europe/Rome',
+      timezone: tz.trim() || 'America/New_York',
       ...(profile?.id ? { profile_id: profile.id } : {}),
       tiktok_settings: plats.tiktok && accounts.tiktok ? {
         privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: true, allow_duet: true,

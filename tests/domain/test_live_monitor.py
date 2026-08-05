@@ -195,7 +195,7 @@ def test_validate_config_defaults():
     assert cfg["min_gap_seconds"] == 900
     assert cfg["poll_interval"] == 60
     assert cfg["loop"] is False
-    assert cfg["timezone"] == "Europe/Rome"
+    assert cfg["timezone"] == "America/New_York"
 
 
 def test_validate_config_lowercases_and_bounds():

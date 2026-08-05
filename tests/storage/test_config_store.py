@@ -134,7 +134,7 @@ def test_zernio_profiles_save_load_default(tmp_config):
     assert default["api_key"] == "sk_aaaaaaaa_key_a"
     # Legacy fields stay in sync with the default profile.
     assert z["api_key"] == "sk_aaaaaaaa_key_a"
-    assert z["timezone"] == "Europe/Rome"
+    assert z["timezone"] == "America/New_York"
 
 
 def test_zernio_profile_blank_key_keeps_existing(tmp_config):

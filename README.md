@@ -170,7 +170,7 @@ Runtime env overrides (rarely needed):
 | `YTDLP_PLAYER_CLIENTS` | `default,tv+tv_embedded,web_safari` | Comma-separated yt-dlp player-client fallback chain; each entry is `default` (no override) or a `+`-joined client list. On a 403 / format-negotiation failure the next entry is tried (5 s apart); page-level blocks (bot wall, private/removed, geo) stop the chain immediately. |
 | `CLIPPYME_X264_CRF` | `18` | Shared libx264 quality for every render/compose encode (near-visually-lossless; lower = higher quality + bigger files, 0–51). Stops the stacked re-encodes from compounding into soft output. |
 | `CLIPPYME_X264_PRESET` | `medium` | Shared libx264 preset; a faster preset (e.g. `fast`) trades a little quality/size for render speed. |
-| `ZERNIO_DEFAULT_TZ` | `Europe/Rome` | |
+| `ZERNIO_DEFAULT_TZ` | `America/New_York` | Default IANA timezone for Zernio publishing and the live monitor when no profile/monitor timezone is configured. |
 | `ZERNIO_MIN_GAP_SECONDS` | `5400` | SmartScheduler min spacing between posts. |
 | `AE_CROSSFADE` | `0.15` | Smart Cut ffmpeg renderer: crossfade (seconds) between consecutive kept segments so pause-removal cuts blend instead of hard-cutting. `0` = hard cuts. |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | _(unset)_ | Helix app creds ([dev.twitch.tv](https://dev.twitch.tv/console/apps)) for the Twitch content monitor. Also settable in Settings. Fallback only if not stored in `data/config.json`. |
