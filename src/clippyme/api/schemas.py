@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import re
 from datetime import datetime
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
@@ -140,7 +141,14 @@ _ALLOWED_CONFIG_KEYS = frozenset({
     "GEMINI_API_KEY", "GEMINI_MODEL", "YOUTUBE_COOKIES", "HF_TOKEN",
     "HUGGINGFACE_TOKEN", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY",
     "TRANSCRIPTION_PROVIDER", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
+    "OPENAI_CAPTIONS_BASE_URL", "OPENAI_CAPTIONS_API_KEY",
+    "OPENAI_CAPTIONS_MODEL",
 })
+
+# OpenAI-compatible model ids: letters/digits plus ._-/ (OpenRouter "org/model",
+# Ollama "namespace/model", etc.). Keeps a config value from smuggling argv-ish
+# input into the HTTP payload.
+_OPENAI_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/\-]{0,127}$")
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -161,6 +169,12 @@ class ConfigUpdateRequest(BaseModel):
         model = values.get("GEMINI_MODEL")
         if model and not GEMINI_MODEL_RE.fullmatch(model):
             raise ValueError("GEMINI_MODEL is not a valid Gemini model id")
+        base_url = values.get("OPENAI_CAPTIONS_BASE_URL")
+        if base_url and not re.match(r"^https?://\S+$", base_url):
+            raise ValueError("OPENAI_CAPTIONS_BASE_URL must be an http(s) URL")
+        caption_model = values.get("OPENAI_CAPTIONS_MODEL")
+        if caption_model and not _OPENAI_MODEL_RE.fullmatch(caption_model):
+            raise ValueError("OPENAI_CAPTIONS_MODEL is not a valid model id")
         return values
 
 
@@ -291,6 +305,34 @@ class EditAIRequest(BaseModel):
     model: Optional[str] = Field(
         None, max_length=64, pattern=r"^gemini-[A-Za-z0-9.\-]{1,64}$"
     )
+
+
+class CaptionOptimizeRequest(BaseModel):
+    """Batch caption generation for a job's clips via an OpenAI-compatible API.
+
+    ``context`` is the creator's series notes sent alongside each clip's own
+    transcript; ``indices`` are the ABSOLUTE ``shorts`` positions to caption
+    (omitted = every clip). The frontend sends only clips whose caption the
+    user hasn't hand-written, so this endpoint never overwrites their work.
+    """
+    context: str = Field("", max_length=2000)
+    indices: Optional[List[int]] = Field(None, max_length=50)
+
+    @field_validator("indices")
+    @classmethod
+    def _bound_indices(cls, value):
+        if value is None:
+            return value
+        seen, out = set(), []
+        for index in value:
+            if not isinstance(index, int) or isinstance(index, bool):
+                raise ValueError("indices must be integers")
+            if index < 0 or index > 100000:
+                raise ValueError("indices out of range")
+            if index not in seen:
+                seen.add(index)
+                out.append(index)
+        return out
 
 
 class PublishRequest(BaseModel):

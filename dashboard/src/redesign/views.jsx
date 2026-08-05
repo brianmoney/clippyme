@@ -10,6 +10,7 @@ import {
   listFonts, uploadFont, deleteFont, logoStatus, uploadLogo, deleteLogo,
 } from './realApi';
 import { SUB_FONTS } from './data';
+import { TIMEZONES } from './publish';
 import { getApiToken, setApiToken } from '../lib/apiToken';
 
 // Curated fallback when live discovery is unavailable (no key yet / offline).
@@ -134,10 +135,14 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
   const [hf, setHf] = useState('');
   const [twitchId, setTwitchId] = useState('');
   const [twitchSecret, setTwitchSecret] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [openaiUrl, setOpenaiUrl] = useState('');
+  const [openaiModel, setOpenaiModel] = useState('');
   const [apiToken, setApiTokenState] = useState(() => getApiToken());
   const [present, setPresent] = useState({});
   const [zernio, setZernioState] = useState(null);
   const [zKey, setZKey] = useState('');
+  const [zTz, setZTz] = useState('Europe/Rome');
   const [accts, setAccts] = useState({ tiktok: '', instagram: '', youtube: '' });
   const [cookies, setCookies] = useState(!!cookiesConfigured);
   const [logoOn, setLogoOn] = useState(false);
@@ -174,14 +179,17 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
     setPresent({
       gemini: !!c.GEMINI_API_KEY, hf: !!c.HF_TOKEN, deepgram: !!c.DEEPGRAM_API_KEY, elevenlabs: !!c.ELEVENLABS_API_KEY,
       twitchId: !!c.TWITCH_CLIENT_ID, twitchSecret: !!c.TWITCH_CLIENT_SECRET,
+      openai: !!(c.OPENAI_CAPTIONS_API_KEY && c.OPENAI_CAPTIONS_BASE_URL),
     });
     if (c.TRANSCRIPTION_PROVIDER) setProvider(c.TRANSCRIPTION_PROVIDER);
     if (c.GEMINI_MODEL) setModel(c.GEMINI_MODEL);
+    if (c.OPENAI_CAPTIONS_BASE_URL) setOpenaiUrl(c.OPENAI_CAPTIONS_BASE_URL);
+    if (c.OPENAI_CAPTIONS_MODEL) setOpenaiModel(c.OPENAI_CAPTIONS_MODEL);
   };
 
   useEffect(() => {
     refreshConfig().then(loadModels);
-    getZernio().then((z) => { setZernioState(z); if (z.accounts) setAccts({ tiktok: '', instagram: '', youtube: '', ...z.accounts }); }).catch(() => {});
+    getZernio().then((z) => { setZernioState(z); if (z.accounts) setAccts({ tiktok: '', instagram: '', youtube: '', ...z.accounts }); setZTz(z.timezone || 'Europe/Rome'); }).catch(() => {});
     cookiesStatus().then((s) => setCookies(!!s.configured)).catch(() => {});
     logoStatus().then((s) => setLogoOn(!!s.configured)).catch(() => {});
     listFonts().then(({ fonts: f }) => setFonts(Array.isArray(f) ? f : [])).catch(() => {});
@@ -196,7 +204,7 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
 
   const saveZernioCfg = async () => {
     try {
-      const payload = { accounts: accts };
+      const payload = { accounts: accts, timezone: zTz.trim() || 'Europe/Rome' };
       if (zKey.trim()) payload.api_key = zKey.trim();
       const z = await saveZernio(payload);
       setZernioState(z); setZKey('');
@@ -314,6 +322,50 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
         </div>
       </Panel>
 
+      <Panel title="AI captions" sub="Optional OpenAI-compatible model for caption optimization" icon="sparkles" style={{ marginBottom: 18 }}>
+        <div className="zernio-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div className="zico"><Icon n="sparkles" /></div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="kt">OpenAI-compatible endpoint</div>
+              <div className="kd">Powers “AI captions” on the results page: your series context + each clip&apos;s transcript → a caption per clip. Works with OpenAI, OpenRouter, Ollama, LM Studio…</div>
+            </div>
+            {present.openai && <span className="conn"><Icon n="circle-check" />Connected</span>}
+          </div>
+          <input className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+            aria-label="OpenAI-compatible endpoint URL"
+            value={openaiUrl} placeholder="https://api.openai.com/v1"
+            onChange={(e) => setOpenaiUrl(e.target.value)} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <input className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+              aria-label="AI caption model"
+              value={openaiModel} placeholder="gpt-4o-mini"
+              onChange={(e) => setOpenaiModel(e.target.value)} />
+            <input className="key-input" style={{ width: '100%' }} type="password"
+              aria-label="OpenAI-compatible API key"
+              value={openaiKey} placeholder={present.openai ? 'Replace API key (optional)' : 'API key (sk-…)'}
+              onChange={(e) => setOpenaiKey(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn variant="secondary" size="sm" icon="key-round"
+              disabled={!openaiUrl.trim()}
+              onClick={() => saveKeys({
+                OPENAI_CAPTIONS_BASE_URL: openaiUrl.trim(),
+                OPENAI_CAPTIONS_API_KEY: openaiKey.trim(),
+                OPENAI_CAPTIONS_MODEL: openaiModel.trim() || 'gpt-4o-mini',
+              })}>Save</Btn>
+            {present.openai && (
+              <Btn variant="ghost" size="sm" icon="trash-2"
+                onClick={() => saveKeys({
+                  OPENAI_CAPTIONS_BASE_URL: '',
+                  OPENAI_CAPTIONS_API_KEY: '',
+                  OPENAI_CAPTIONS_MODEL: '',
+                })}>Clear</Btn>
+            )}
+          </div>
+        </div>
+      </Panel>
+
       <Panel title="Publishing" sub="Push finished clips to socials via Zernio" icon="send" style={{ marginBottom: 18 }}>
         <div className="zernio-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -333,6 +385,19 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
                 aria-label={`${p} account id`}
                 value={accts[p] || ''} placeholder={`${p} account id`} onChange={(e) => setAccts((a) => ({ ...a, [p]: e.target.value }))} />
             ))}
+          </div>
+          <div className="opt" style={{ padding: 0, border: 0 }}>
+            <div className="oico"><Icon n="globe" /></div>
+            <div className="otxt"><div className="ot">Schedule timezone</div><div className="od">Prime-time slots (SmartScheduler) are computed in this zone</div></div>
+            <div className="r">
+              <select className="key-input" style={{ width: 'auto', maxWidth: 180, fontFamily: 'var(--font-sans)' }}
+                aria-label="Schedule timezone"
+                value={zTz}
+                onChange={(e) => setZTz(e.target.value)}>
+                {zTz && !TIMEZONES.includes(zTz) && <option value={zTz}>{zTz}</option>}
+                {TIMEZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+              </select>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <Btn variant="secondary" size="sm" icon="rss" onClick={discover}>Discover from Zernio</Btn>

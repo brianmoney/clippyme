@@ -2,6 +2,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Icon, Btn, Badge } from './primitives';
 import { LazyVideo } from './LazyVideo';
+import { AiCaptionPanel } from './aiCaptions';
 import { clipPreviewSrc, fmtDuration, downloadClip, exportClip, getClipTranscript } from './realApi';
 
 const REFRAME_ICON = { auto: 'crop', subject: 'scan-face', object: 'scan-face', disabled: 'square' };
@@ -11,6 +12,8 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselections, onUpdate, onEdit, onApplyToAll, selectMode, onPublish, pushToast }) {
   const [downloading, setDownloading] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [showCaption, setShowCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState('');
   const [transcript, setTranscript] = useState(null); // null = not loaded yet
   const [txLoading, setTxLoading] = useState(false);
   const [txErr, setTxErr] = useState(false);
@@ -97,6 +100,16 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
     }
   };
 
+  // Toggle the in-gallery caption editor. The draft is seeded once when the
+  // panel opens: from the persisted per-clip state first (set here or in the
+  // publish modal), then the clip's own metadata caption, else empty.
+  const toggleCaption = (event) => {
+    event.stopPropagation();
+    if (showCaption) { setShowCaption(false); return; }
+    setCaptionDraft(state?.caption ?? clip.tiktok_caption ?? '');
+    setShowCaption(true);
+  };
+
   return (
     <article {...selectionProps} className={`clip${score >= 90 ? ' top' : ''}${selectMode && selected ? ' sel' : ''}`}>
       <div className="clip-media" style={{ padding: 0, background: '#000' }}>
@@ -121,6 +134,8 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
         <span className="ttl" title={title}>{title}</span>
         {!selectMode && <button type="button" className="mini" title="Show / hide this clip's transcript" aria-label="Toggle transcript"
           aria-expanded={showTranscript} onClick={toggleTranscript}><Icon n="captions" /></button>}
+        {!selectMode && <button type="button" className="mini" title="Edit this clip's publish caption" aria-label="Toggle caption"
+          aria-expanded={showCaption} onClick={toggleCaption}><Icon n="type" /></button>}
         {!selectMode && <button type="button" className="mini" title="Apply these settings to all clips" aria-label="Apply settings to all clips" disabled={processing}
           onClick={(event) => { event.stopPropagation(); if (!processing && window.confirm("Apply this clip's settings to every other clip? Manual trim and per-clip hook text are not copied.")) onApplyToAll(index); }}><Icon n="copy" /></button>}
         <button type="button" className="mini" title="Download with edits" aria-label={`Download ${title}`} disabled={downloading || processing} onClick={doDownload}><Icon n={downloading ? 'loader' : 'download'} /></button>
@@ -160,6 +175,19 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
           )}
         </div>
       )}
+      {showCaption && (
+        <div className="clip-caption">
+          <div className="ct-head">
+            <span className="ct-title">Caption</span>
+            <span className="cc-hint">used on publish</span>
+          </div>
+          <textarea className="cc-ta" rows="2" maxLength={2200}
+            value={captionDraft}
+            placeholder={`Caption for this clip${clip.tiktok_caption ? ' — Gemini suggested one' : ''}…`}
+            aria-label={`Caption for ${title}`}
+            onChange={(e) => { setCaptionDraft(e.target.value); onUpdate(index, { caption: e.target.value, captionTouched: true }); }} />
+        </div>
+      )}
     </article>
   );
 });
@@ -167,6 +195,7 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
 export function ResultsView({ clips, jobId, preselections, clipStates = {}, onUpdateClipState,
   doneIn, onBack, onPublish, onPublishAll, onEdit, onApplyToAll, onEditSelected, embedded, pushToast }) {
   const [selectMode, setSelectMode] = useState(false);
+  const [aiCaptionsOpen, setAiCaptionsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const visible = useMemo(() => clips.map((clip, index) => ({ c: clip, i: index })).filter(({ i }) => !clipStates[i]?.deleted), [clips, clipStates]);
   const selected = useMemo(() => visible.filter(({ i }) => clipStates[i]?.selected !== false), [visible, clipStates]);
@@ -203,11 +232,19 @@ export function ResultsView({ clips, jobId, preselections, clipStates = {}, onUp
             if (!current) visible.forEach(({ i }) => onUpdateClipState(i, { selected: false }));
             return !current;
           })}>{selectMode ? 'Cancel' : 'Select'}</Btn>
+          {!selectMode && <Btn variant="secondary" size="sm" icon="sparkles"
+            aria-expanded={aiCaptionsOpen} onClick={() => setAiCaptionsOpen((o) => !o)}>
+            AI captions</Btn>}
           {!selectMode && <Btn variant="secondary" size="sm" icon="download" loading={exporting} disabled={!visible.length} onClick={() => exportMany(visible)}>{exporting ? 'Exporting…' : 'Export all'}</Btn>}
           {!selectMode && <Btn variant="grad" size="sm" icon="send" disabled={!visible.length} onClick={() => publishMany(visible)}>Publish all</Btn>}
         </div>
       </div>
       <div className="results-sub">Sorted by virality score · top moment {topScore}</div>
+
+      {aiCaptionsOpen && !selectMode && (
+        <AiCaptionPanel jobId={jobId} clips={clips} clipStates={clipStates}
+          onUpdateClipState={onUpdateClipState} pushToast={pushToast} />
+      )}
 
       {selectMode && <div className="actionbar" role="toolbar" aria-label="Selected clip actions">
         <span className="sel-n" aria-live="polite">{selected.length} selected</span>

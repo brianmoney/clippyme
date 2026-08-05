@@ -20,6 +20,9 @@ VALID_CONFIG_KEYS = (
     "TRANSCRIPTION_PROVIDER",
     "TWITCH_CLIENT_ID",
     "TWITCH_CLIENT_SECRET",
+    "OPENAI_CAPTIONS_BASE_URL",
+    "OPENAI_CAPTIONS_API_KEY",
+    "OPENAI_CAPTIONS_MODEL",
 )
 ZERNIO_CONFIG_NAMESPACE = "zernio"
 _CONFIG_LOCK = threading.RLock()
@@ -167,6 +170,9 @@ def load_persistent_config() -> dict:
         "TRANSCRIPTION_PROVIDER": os.environ.get("TRANSCRIPTION_PROVIDER", "deepgram"),
         "TWITCH_CLIENT_ID": os.environ.get("TWITCH_CLIENT_ID", ""),
         "TWITCH_CLIENT_SECRET": os.environ.get("TWITCH_CLIENT_SECRET", ""),
+        "OPENAI_CAPTIONS_BASE_URL": os.environ.get("OPENAI_CAPTIONS_BASE_URL", "https://api.openai.com/v1"),
+        "OPENAI_CAPTIONS_API_KEY": os.environ.get("OPENAI_CAPTIONS_API_KEY", ""),
+        "OPENAI_CAPTIONS_MODEL": os.environ.get("OPENAI_CAPTIONS_MODEL", "gpt-4o-mini"),
     }
     raw = _read_raw_config()
     config.update({key: value for key, value in raw.items() if key in VALID_CONFIG_KEYS})

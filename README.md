@@ -144,6 +144,7 @@ All API keys, model selection, and cookies are managed **from the dashboard Sett
 | `DEEPGRAM_API_KEY` | Cloud transcription (default) | Falls back to local Faster-Whisper if missing. |
 | `ELEVENLABS_API_KEY` | Alternative cloud transcription (Scribe) | Adds audio-event tags + optional Voice Isolator; also falls back to Faster-Whisper. |
 | `HUGGINGFACE_TOKEN` | Optional gated models for Whisper | |
+| `OPENAI_CAPTIONS_API_KEY` | AI caption optimization (optional) | Any OpenAI-compatible `/chat/completions` endpoint: set `OPENAI_CAPTIONS_BASE_URL` (default `https://api.openai.com/v1`) + `OPENAI_CAPTIONS_MODEL` (default `gpt-4o-mini`). Works with OpenRouter, Ollama, LM Studio, etc. Configure in Settings → AI captions. |
 | Zernio | Social publishing | Per-platform account IDs auto-discovered via "Discover from Zernio". |
 | Cookies | YouTube age-gated / region-locked content | Upload a Netscape `cookies.txt` from the Settings tab. Stored at `data/cookies.txt`, mode `0600`, max 10 MB. |
 

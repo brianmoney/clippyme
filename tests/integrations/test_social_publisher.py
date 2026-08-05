@@ -5,7 +5,8 @@ Covers the two pure, network-free pieces:
 - SmartScheduler.find_slot() — the deterministic (seeded) prime-time slot picker.
 """
 import random
-from datetime import date, datetime, time, timedelta
+import threading
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 
 import pytest
 
@@ -314,3 +315,115 @@ def test_presigned_upload_dns_failure_is_fail_closed(monkeypatch):
 def test_zernio_client_rejects_non_official_base_url():
     with pytest.raises(ValueError, match="official"):
         sp.ZernioClient("sk_test", base_url="https://attacker.example/api")
+
+
+def test_auto_occupancy_filters_to_target_day_in_timezone(monkeypatch, tmp_path):
+    """A post whose UTC date differs from the local target day (scheduled 21:37
+    EDT == 01:37 UTC the next day) must be counted only on its local day — and a
+    same-batch clip scheduling the SAME local day must see it as occupied,
+    otherwise two clips collide (the bug the ±1-day occupancy query fixes)."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"video")
+    captured: dict = {}
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            instant = datetime(2026, 7, 1, 10, 0, tzinfo=dt_timezone.utc)
+            return instant.astimezone(tz) if tz is not None else instant.replace(tzinfo=None)
+
+    class Client:
+        def __init__(self, api_key):
+            pass
+
+        def list_scheduled_posts(self, date_from, date_to, limit=100):
+            # Widened query returns a post stored under its UTC date; the
+            # scheduler must map it back to the target timezone's day.
+            return [
+                {"scheduledFor": "2026-07-01T01:37:00Z"},  # = June 30 21:37 EDT → not July 1
+                {"scheduledFor": "2026-07-01T05:30:00Z"},  # = July 1 01:30 EDT → occupied
+            ]
+
+        def presign_upload(self, filename, content_type="video/mp4", size_bytes=None):
+            return {"uploadUrl": "https://upload.example/object", "publicUrl": "https://cdn.example/object"}
+
+        def upload_to_presigned(self, *args, **kwargs):
+            pass
+
+        def create_post(self, **kwargs):
+            return {"post": {"id": "p1", "status": "scheduled"}}
+
+    class RecordingScheduler(sp.SmartScheduler):
+        def find_slot(self, day, occupied, now=None):
+            captured["occupied"] = sorted(o.hour * 60 + o.minute for o in occupied)
+            return super().find_slot(day, occupied, now)
+
+    monkeypatch.setattr(sp, "datetime", FixedDateTime)
+    monkeypatch.setattr(sp, "ZernioClient", Client)
+    sp.publish_clip(
+        api_key="sk_test",
+        clip_path=str(clip),
+        title="t",
+        caption="c",
+        platform_targets=[{"platform": "youtube", "accountId": "a"}],
+        schedule_mode="auto",
+        timezone="America/New_York",
+        start_date="2026-07-01",
+        scheduler=RecordingScheduler(rng=random.Random(1)),
+    )
+    assert captured["occupied"] == [1 * 60 + 30]  # 01:30 local only
+
+
+def test_auto_batch_same_day_gets_distinct_gap_spaced_slots(monkeypatch, tmp_path):
+    """N clips scheduled on the SAME day (per-day batch publishing) must each
+    land on a distinct slot >= the min gap. The _SCHEDULE_LOCK serializes the
+    occupancy-read → slot-pick → create sequence so a parallel batch's clips
+    see each other's posts as occupied instead of all grabbing empty lists."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"video")
+    created: list[dict] = []
+
+    class Client:
+        def __init__(self, api_key):
+            pass
+
+        def list_scheduled_posts(self, date_from, date_to, limit=100):
+            return [{"scheduledFor": c["scheduled_for"]} for c in created]
+
+        def presign_upload(self, filename, content_type="video/mp4", size_bytes=None):
+            return {"uploadUrl": "https://upload.example/object", "publicUrl": "https://cdn.example/object"}
+
+        def upload_to_presigned(self, *args, **kwargs):
+            pass
+
+        def create_post(self, **kwargs):
+            created.append(kwargs)
+            return {"post": {"id": f"p{len(created)}", "status": "scheduled"}}
+
+    monkeypatch.setattr(sp, "ZernioClient", Client)
+    sched = SmartScheduler(rng=random.Random(7), min_gap_seconds=3600)
+
+    def run():
+        sp.publish_clip(
+            api_key="sk_test",
+            clip_path=str(clip),
+            title="t",
+            caption="c",
+            platform_targets=[{"platform": "tiktok", "accountId": "a"}],
+            schedule_mode="auto",
+            timezone="Europe/Rome",
+            start_date="2026-07-01",
+            scheduler=sched,
+        )
+
+    threads = [threading.Thread(target=run) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    stamps = sorted(datetime.fromisoformat(c["scheduled_for"]) for c in created)
+    assert len(stamps) == 3
+    assert len(set(stamps)) == 3
+    for earlier, later in zip(stamps, stamps[1:]):
+        assert (later - earlier).total_seconds() >= 3600

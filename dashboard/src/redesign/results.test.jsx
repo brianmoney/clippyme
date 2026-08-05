@@ -85,3 +85,58 @@ test('transcript copy writes the joined segment text to the clipboard', async ()
   Object.defineProperty(navigator, 'clipboard', { value: clipboardOrig, configurable: true });
   Object.defineProperty(window, 'isSecureContext', { value: secureOrig, configurable: true });
 });
+
+test('caption editor saves per-clip caption to state', async () => {
+  const onUpdateClipState = vi.fn();
+  render(
+    <ResultsView
+      clips={[{ ...clip }]}
+      jobId="job-1"
+      preselections={{}}
+      clipStates={{}}
+      onUpdateClipState={onUpdateClipState}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Toggle caption' }));
+  fireEvent.change(screen.getByLabelText('Caption for Test Clip'), { target: { value: 'my viral caption' } });
+  expect(onUpdateClipState).toHaveBeenCalledWith(0, { caption: 'my viral caption', captionTouched: true });
+});
+
+test('caption editor seeds from persisted per-clip state', async () => {
+  render(
+    <ResultsView
+      clips={[{ ...clip }]}
+      jobId="job-1"
+      preselections={{}}
+      clipStates={{ 0: { caption: 'pre-saved' } }}
+      onUpdateClipState={vi.fn()}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Toggle caption' }));
+  expect(screen.getByLabelText('Caption for Test Clip')).toHaveValue('pre-saved');
+});
+
+test('AI captions button expands the context panel above the grid', async () => {
+  vi.spyOn(realApi, 'getConfig').mockResolvedValue({
+    OPENAI_CAPTIONS_API_KEY: '',
+    OPENAI_CAPTIONS_BASE_URL: '',
+    OPENAI_CAPTIONS_MODEL: '',
+  });
+  renderView();
+  fireEvent.click(await screen.findByRole('button', { name: 'AI captions' }));
+  expect(await screen.findByLabelText('AI caption context')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'AI captions' }));
+  expect(screen.queryByLabelText('AI caption context')).toBeNull();
+});

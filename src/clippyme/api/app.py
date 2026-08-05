@@ -37,6 +37,7 @@ from clippyme.domain.errors import ClippyMeError
 from clippyme.domain.uploads import stream_upload_within_limit, FileTooLarge
 from clippyme.domain.clip_endpoints import run_smart_cut, restore_job_from_disk
 from clippyme.domain.clip_resolve import resolve_clip
+from clippyme.domain.job_artifacts import load_job_metadata
 from clippyme.domain import job_control
 from clippyme.domain.job_actions import cancel_job_action, stop_job_action
 from clippyme.domain.job_journal import JOURNAL_FILENAME, make_journal_writer, recover_jobs
@@ -45,6 +46,7 @@ from clippyme.domain.job_submission import QueueFullError, submit_job
 from clippyme.domain.publish_service import publish_clip_flow
 from clippyme.api.schemas import (
     BatchRequest,
+    CaptionOptimizeRequest,
     ComposeRequest,
     EditAIRequest,
     LiveMonitorPublishingRequest,
@@ -712,6 +714,58 @@ async def edit_clip_ai(
         clip_duration=duration,
     )
     return {"drop_ranges": result["drops"], "explanation": result["explanation"]}
+
+
+@app.post("/api/captions/optimize/{job_id}")
+async def optimize_clip_captions(job_id: str, req: CaptionOptimizeRequest, request: Request):
+    """Generate an optimized publish caption per clip via an OpenAI-compatible API.
+
+    Each clip's own transcript segments + the shared user ``context`` go to the
+    configured chat-completions endpoint; the returned captions fill the per-clip
+    caption fields (the frontend only sends clips whose caption wasn't hand-written).
+    """
+    require_trusted_config_request(request)
+    if not is_valid_job_id(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+
+    from clippyme.domain import caption_ai
+
+    cfg = await asyncio.to_thread(load_persistent_config) or {}
+    api_key = cfg.get("OPENAI_CAPTIONS_API_KEY") or ""
+    base_url = cfg.get("OPENAI_CAPTIONS_BASE_URL") or caption_ai.DEFAULT_BASE_URL
+    model = cfg.get("OPENAI_CAPTIONS_MODEL") or caption_ai.DEFAULT_MODEL
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="OpenAI-compatible API key not configured (Settings → AI captions)",
+        )
+
+    try:
+        _, metadata = await asyncio.to_thread(load_job_metadata, job_id, OUTPUT_DIR)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    shorts = metadata.get("shorts", [])
+    indices = req.indices if req.indices is not None else list(range(len(shorts)))
+    out_of_range = [i for i in indices if i < 0 or i >= len(shorts)]
+    if out_of_range:
+        raise HTTPException(status_code=400, detail=f"clip index out of range: {sorted(set(out_of_range))}")
+    if not indices:
+        raise HTTPException(status_code=400, detail="no clips to caption")
+
+    clips = caption_ai.build_clip_payloads(
+        metadata.get("transcript") or {}, shorts, indices, req.context)
+    try:
+        result = await asyncio.to_thread(
+            caption_ai.optimize_captions,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            clips=clips,
+        )
+    except caption_ai.CaptionAIError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc))
+    return {"captions": result, "model": model, "base_url": base_url}
 
 
 @app.post("/api/reframe/{job_id}/{clip_index}")
