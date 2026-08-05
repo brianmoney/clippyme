@@ -8,10 +8,58 @@ test_smartcut_manual_trim.py (which imports the same names via smartcut).
 """
 import json
 
+import pytest
+
 from clippyme.domain import smartcut_ops as ops
 
 
 _PROBE = {"fps_num": 30, "fps_den": 1, "width": 1080, "height": 1920, "samplerate": 48000}
+
+
+# --- build_crossfade_graph -----------------------------------------------------
+
+def test_crossfade_graph_two_segments():
+    graph, v_out, a_out, total = ops.build_crossfade_graph([4.0, 3.0], 0.15)
+    assert v_out == "vfinal" and a_out == "afinal"
+    assert abs(total - 6.85) < 1e-6  # 7.0s minus one 0.15s overlap
+    assert "[0:v][1:v]xfade=transition=fade:duration=0.1500:offset=3.8500[vout]" in graph
+    assert "[0:a][1:a]acrossfade=d=0.1500:c1=tri:c2=tri[aout]" in graph
+    assert "[aout]afade=t=in:st=0:d=0.03" in graph
+    assert "[vout]format=yuv420p[vfinal]" in graph
+
+
+def test_crossfade_graph_offsets_accumulate():
+    # Three segments: join 1 at 4.0-0.15, join 2 at (4+3-0.15)-0.15 = 6.7.
+    graph, _, _, total = ops.build_crossfade_graph([4.0, 3.0, 2.0], 0.15)
+    assert abs(total - (9.0 - 2 * 0.15)) < 1e-6
+    assert "offset=3.8500" in graph
+    assert "offset=6.7000" in graph
+    assert "vx1" in graph and "vx2" not in graph  # last join outputs to vout
+
+
+def test_crossfade_graph_clamps_fade_to_shortest_segment():
+    # A 0.5s request against a 0.2s segment clamps to 0.4 * 0.2 = 0.08s.
+    graph, _, _, total = ops.build_crossfade_graph([1.0, 0.2], 0.5)
+    assert "duration=0.0800" in graph
+    assert abs(total - (1.2 - 0.08)) < 1e-6
+
+
+def test_crossfade_graph_skips_tail_fade_when_total_tiny():
+    # total <= 0.06 → no tail fade (would have a negative start timestamp).
+    graph, _, a_out, _ = ops.build_crossfade_graph([0.02, 0.02], 0.02)
+    assert a_out == "aout"
+    assert "afade=t=out" not in graph
+
+
+def test_crossfade_graph_rejects_invalid_input():
+    with pytest.raises(ValueError):
+        ops.build_crossfade_graph([1.0], 0.15)  # one segment
+    with pytest.raises(ValueError):
+        ops.build_crossfade_graph([0.0, 1.0], 0.15)  # zero-length segment
+    with pytest.raises(ValueError):
+        ops.build_crossfade_graph(["x", 1.0], 0.15)  # non-numeric
+    with pytest.raises(ValueError):
+        ops.build_crossfade_graph([1.0, 1.0], 0.0)  # no fade
 
 
 # --- _build_v3_timeline -------------------------------------------------------

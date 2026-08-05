@@ -449,3 +449,65 @@ def _build_v3_timeline(
         "v": [video_clips],
         "a": [audio_clips],
     }
+
+
+def build_crossfade_graph(durations: list[float], fade: float) -> tuple[str, str, str, float]:
+    """Build an ffmpeg ``-filter_complex`` graph that crossfades N consecutive
+    kept segments into one continuous cut.
+
+    ``durations`` are the kept-segment lengths in seconds, in output order.
+    ``fade`` is the requested crossfade length; it is clamped to a safe fraction
+    of the shortest segment so a short segment can never be swallowed by the
+    blend.
+
+    Video joins use ``xfade`` (pure crossfade), audio uses ``acrossfade`` with
+    triangular gain curves; both consume ``fade`` seconds per join, so audio and
+    video stay sample-accurately in sync across the whole graph. The output
+    audio additionally gets a short head/tail fade so the outermost edges of the
+    cut don't click (interior joins are already smoothed by ``acrossfade``).
+
+    Returns ``(filter_graph, video_out_label, audio_out_label, total_seconds)``.
+    The graph's inputs are ``0:v``/``0:a``, ``1:v``/``1:a``, … in segment order
+    (matches ``ffmpeg -i seg0 -i seg1 …``). Raises ``ValueError`` for fewer than
+    two segments or non-positive/invalid durations.
+    """
+    if len(durations) < 2:
+        raise ValueError("need at least two segments to crossfade")
+    try:
+        ds = [max(0.0, float(d)) for d in durations]
+    except (TypeError, ValueError):
+        raise ValueError("durations must be numeric") from None
+    if len(ds) != len(durations) or any(d <= 0 for d in ds):
+        raise ValueError("segment durations must be positive")
+    fade = max(0.0, min(float(fade), min(ds) * 0.4))
+    if fade <= 0:
+        raise ValueError("fade must be positive")
+
+    parts: list[str] = []
+    prev_v, prev_a = "0:v", "0:a"
+    acc = ds[0]
+    n = len(ds)
+    for i in range(1, n):
+        offset = acc - fade
+        vout = "vout" if i == n - 1 else f"vx{i}"
+        aout = "aout" if i == n - 1 else f"ax{i}"
+        parts.append(
+            f"[{prev_v}][{i}:v]xfade=transition=fade:duration={fade:.4f}:"
+            f"offset={offset:.4f}[{vout}]"
+        )
+        parts.append(
+            f"[{prev_a}][{i}:a]acrossfade=d={fade:.4f}:c1=tri:c2=tri[{aout}]"
+        )
+        prev_v, prev_a = vout, aout
+        acc += ds[i] - fade
+
+    total = acc
+    audio_cur = "aout"
+    if total > 0.06:
+        parts.append(
+            f"[aout]afade=t=in:st=0:d=0.03,"
+            f"afade=t=out:st={total - 0.03:.4f}:d=0.03[afinal]"
+        )
+        audio_cur = "afinal"
+    parts.append("[vout]format=yuv420p[vfinal]")
+    return ";".join(parts), "vfinal", audio_cur, total

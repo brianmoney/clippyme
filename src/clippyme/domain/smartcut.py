@@ -53,6 +53,7 @@ from clippyme.domain.smartcut_ops import (  # noqa: F401
     _normalize_token,
     _segments_hash,
     analyze_silences,
+    build_crossfade_graph,
     clip_transcript_segments,
     normalize_drop_ranges,
     subtract_ranges,
@@ -130,6 +131,11 @@ SKIP_POLISH_IF_SAVED_OVER = float(os.environ.get("AE_SKIP_POLISH_THRESHOLD", "8.
 # legitimate quiet sections being misidentified as silence). Revert in that
 # case rather than serve a butchered video.
 MAX_POLISH_CUT_RATIO = float(os.environ.get("AE_MAX_POLISH_CUT_RATIO", "0.5"))
+
+# Crossfade between consecutive kept segments in the FFmpeg renderer. A short
+# blend (video xfade + audio acrossfade) at each pause-removal cut makes the
+# jump far less noticeable than a hard cut. 0 = hard cuts (legacy behavior).
+SMARTCUT_CROSSFADE = float(os.environ.get("AE_CROSSFADE", "0.15"))
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +344,85 @@ def _render_with_auto_editor(
 # ---------------------------------------------------------------------------
 
 def _render_with_ffmpeg(
+    clip_path: str,
+    segments: list[tuple[float, float]],
+    output_path: str,
+) -> bool:
+    """FFmpeg renderer for the keep-segments (the auto-editor-free fallback).
+
+    With ≥2 segments and crossfading enabled, consecutive kept segments are
+    blended with a short video crossfade + audio crossfade at each pause-removal
+    cut — the standard fix for jump cuts that look "noticeable". Falls back to
+    the legacy concat-demuxer hard cuts if crossfading is disabled or the graph
+    fails (a lone kept segment is just extracted and moved, no join needed).
+    """
+    if len(segments) > 1 and SMARTCUT_CROSSFADE > 0:
+        if _render_with_crossfade(clip_path, segments, output_path):
+            return True
+        logger.warning("ffmpeg crossfade render failed, falling back to hard concat")
+    return _render_hard_concat(clip_path, segments, output_path)
+
+
+def _render_with_crossfade(
+    clip_path: str,
+    segments: list[tuple[float, float]],
+    output_path: str,
+) -> bool:
+    """Render the keep-segments with a short crossfade at every join.
+
+    Each kept segment is extracted once, then a single ``-filter_complex`` pass
+    chains ``xfade`` (video) + ``acrossfade`` (audio) between consecutive
+    segments so the removed-pause jumps blend instead of hard-cutting.
+    """
+    temp_dir = tempfile.mkdtemp(prefix="smartcut_xf_")
+    try:
+        durations: list[float] = []
+        segment_files: list[str] = []
+        for i, (start, end) in enumerate(segments):
+            seg_path = os.path.join(temp_dir, f"seg_{i:03d}.mp4")
+            # No per-segment audio fade here — the crossfade handles interior
+            # joins and a global head/tail fade covers the outer edges.
+            rc, _, _ = _run([
+                "ffmpeg", "-y",
+                "-ss", str(start), "-to", str(end),
+                "-i", clip_path,
+                *x264_video_args(),
+                "-c:a", "aac",
+                "-avoid_negative_ts", "make_zero",
+                seg_path,
+            ])
+            if rc != 0 or not os.path.exists(seg_path):
+                return False
+            durations.append(float(end) - float(start))
+            segment_files.append(seg_path)
+
+        try:
+            graph, v_out, a_out, _total = build_crossfade_graph(
+                durations, SMARTCUT_CROSSFADE)
+        except ValueError:
+            return False
+
+        inputs: list[str] = []
+        for seg_path in segment_files:
+            inputs += ["-i", seg_path]
+        rc, _, stderr = _run([
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", graph,
+            "-map", f"[{v_out}]", "-map", f"[{a_out}]",
+            *x264_video_args(),
+            "-c:a", "aac",
+            output_path,
+        ])
+        if rc != 0:
+            logger.warning("ffmpeg crossfade render failed: %s", stderr.strip()[:300])
+            return False
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _render_hard_concat(
     clip_path: str,
     segments: list[tuple[float, float]],
     output_path: str,
