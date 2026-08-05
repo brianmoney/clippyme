@@ -5,7 +5,12 @@ where no unit test could reach it.
 """
 import os
 
-from clippyme.pipeline.run_ops import build_cut_command, clip_output_basename, resolve_output_dir
+from clippyme.pipeline.run_ops import (
+    build_cut_command,
+    build_vfr_normalization_command,
+    clip_output_basename,
+    resolve_output_dir,
+)
 
 
 # --- resolve_output_dir -------------------------------------------------------
@@ -56,6 +61,21 @@ def test_cut_command_uses_shared_x264_settings():
     cmd = build_cut_command("/in.mp4", 0, 10, "/out.mp4")
     for arg in x264_video_args(faststart=False):
         assert arg in cmd
+
+
+def test_vfr_normalization_command_uses_shared_encode_policy(monkeypatch):
+    monkeypatch.setenv("CLIPPYME_X264_CRF", "17")
+    monkeypatch.setenv("CLIPPYME_X264_PRESET", "slow")
+
+    command = build_vfr_normalization_command("input.mp4", "normalized.mp4")
+
+    assert command == [
+        "ffmpeg", "-y", "-i", "input.mp4",
+        "-vsync", "cfr",
+        "-c:v", "libx264", "-preset", "slow", "-crf", "17",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy", "normalized.mp4",
+    ]
 
 
 # --- clip_output_basename -----------------------------------------------------

@@ -4,6 +4,7 @@
 // live/error status. Per-clip compose_first honours the clip's toggles.
 import { useState, useEffect, useRef } from 'react';
 import { Icon, Social, Btn, Switch, Stepper, PlatPill, PLATFORMS } from './primitives';
+import { LazyVideo } from './LazyVideo';
 import { clipVideoSrc } from './realApi';
 import { publishClip, getZernio } from './realApi';
 import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams } from '../lib/seedClipParams';
@@ -40,7 +41,9 @@ function PubRow({ clip, idx, st, plats }) {
   return (
     <div className={'pubrow' + (done ? ' done' : '')}>
       <div className="pthumb" style={{ background: '#000', overflow: 'hidden' }}>
-        <video src={clipVideoSrc(clip)} muted playsInline preload="metadata"
+        {/* LazyVideo, not a bare <video>: a 20-clip batch publish must not fire
+            20 concurrent video fetches the moment the modal opens. */}
+        <LazyVideo src={clipVideoSrc(clip)} muted playsInline rootMargin="120px"
           style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       </div>
       <div className="pinfo">

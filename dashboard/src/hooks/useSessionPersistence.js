@@ -48,8 +48,13 @@ export function useSessionPersistence({ status, jobId, results, processingMedia,
       preselections: preselections || null,
       timestamp: Date.now(),
     };
-    if (!writeStoredJson(SESSION_KEY, payload) && payload.results) {
-      writeStoredJson(SESSION_KEY, { ...payload, results: { clips: payload.results.clips || [] } });
+    // Quota fallback: drop the clip payloads (the size culprit), then clear
+    // outright — a half-written retry would otherwise leave a STALE session
+    // behind that the next load happily restores.
+    if (!writeStoredJson(SESSION_KEY, payload)) {
+      if (!writeStoredJson(SESSION_KEY, { ...payload, results: null })) {
+        clearPersistedSession();
+      }
     }
   }, [jobId, status, results, activeTab, processingMedia, preselections]);
 }

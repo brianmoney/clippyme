@@ -182,6 +182,7 @@ Runtime env overrides (rarely needed):
 | `REFRAME_SPRING_RESPONSE` / `REFRAME_SPRING_DAMPING` | `0.18` / `0.82` | Damped-spring smoother tuning (only when `REFRAME_SMOOTHER=spring`): acceleration / velocity decay. |
 | `REFRAME_GLOBAL_SMOOTH` / `REFRAME_GLOBAL_METHOD` | _(off)_ / `savgol` | Opt-in 2-pass trajectory smoothing. ⚠️ `kalman`/`l2` only take effect with `REFRAME_STATIC_AUTO=0` — under the default static-auto policy each scene collapses to one locked crop and the trajectory smoother never runs. |
 | `CLIPPYME_YOLO_PATH` | `data/cache/ultralytics/yolov8n.pt` | Path to the YOLOv8n weights used by person-detection fallback. Downloaded once into the persistent cache on first use (background pre-warm at job start); if the download fails the reframe degrades to face-only tracking / letterbox instead of failing the clip. |
+| `CLIPPYME_CREATOR_NAME` | _(unset)_ | Channel owner passed to the Gemini prompt so titles can name whose stream the clip is from. Set per-job by the Live Monitor; never used to attribute a quote. |
 
 ---
 

@@ -90,6 +90,16 @@ def should_use_fallback(monitor_mode: bool) -> bool:
     return not monitor_mode
 
 
+def build_vfr_normalization_command(input_video: str, dest: str) -> list[str]:
+    """ffmpeg argv for converting a VFR source to CFR before reframe."""
+    return [
+        "ffmpeg", "-y", "-i", input_video,
+        "-vsync", "cfr",
+        *x264_video_args(faststart=False),
+        "-c:a", "copy", dest,
+    ]
+
+
 def build_cut_command(input_video: str, start: float, end: float, dest: str) -> list[str]:
     """ffmpeg argv for cutting the 16:9 source slice of one clip.
 

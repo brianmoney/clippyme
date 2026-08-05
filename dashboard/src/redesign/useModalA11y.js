@@ -41,6 +41,14 @@ export function useModalA11y(onClose) {
       if (items.length === 0) { e.preventDefault(); return; }
       const firstEl = items[0];
       const lastEl = items[items.length - 1];
+      // The previously focused control may have unmounted (e.g. the publish
+      // modal swaps stages mid-interaction), dropping focus to <body> — pull
+      // it back inside instead of letting Tab walk the page behind the modal.
+      if (!panel.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? lastEl : firstEl).focus();
+        return;
+      }
       if (e.shiftKey && document.activeElement === firstEl) {
         e.preventDefault(); lastEl.focus();
       } else if (!e.shiftKey && document.activeElement === lastEl) {

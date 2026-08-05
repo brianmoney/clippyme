@@ -1110,6 +1110,12 @@ class LiveMonitor:
         # Bound each segment's clip count for the publish-limited monitor —
         # the pipeline keeps the top-N by viral_score (get_viral_clips).
         env["CLIPPYME_MAX_CLIPS"] = str(self.cfg.get("max_clips") or 5)
+        # The channel is the stream owner: the prompt may use it as the SUBJECT
+        # of a title ("<creator> ha trovato…") — never to attribute a quote to
+        # them (SPEAKER ATTRIBUTION RULE still applies, guests exist).
+        creator = str(self.cfg.get("channel") or "").strip()
+        if creator:
+            env["CLIPPYME_CREATOR_NAME"] = creator[:64]
         return job_id, job_dir, env
 
     async def _submit_segment_job(self, seg_path: str) -> str:

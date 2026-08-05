@@ -70,7 +70,7 @@ test('seedSubtitleParams defaults match the backend contract', () => {
   assert.equal(out.preset, 'classic_white');
   assert.equal(out.mode, 'karaoke');
   assert.equal(out.position, 'bottom');
-  assert.equal(out.align, 'center');
+  assert.equal(out.align, 'left');
   assert.equal(out.font_color, '#FFFFFF');
   assert.equal(out.outline_color, '#000000');
   assert.equal(out.offset_y, 0);

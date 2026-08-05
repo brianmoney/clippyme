@@ -422,8 +422,10 @@ def get_viral_clips(transcript_result, video_duration, instructions=None, min_du
 
     # Prompt building (word flattening, untrusted-instructions fencing,
     # template fill) is pure — it lives in gemini_request, host-tested.
+    # The live monitor knows whose stream this is; manual jobs don't (unset).
     prompt, words = build_viral_prompt(
-        transcript_result, video_duration, instructions, min_duration=min_duration
+        transcript_result, video_duration, instructions, min_duration=min_duration,
+        creator=os.getenv("CLIPPYME_CREATOR_NAME"),
     )
 
     if not words:

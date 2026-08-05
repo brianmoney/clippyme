@@ -43,8 +43,8 @@
   /* ---------- Foreground (text on dark) ------------------- */
   --fg-1: #F4F4F6;   /* primary text / headings           */
   --fg-2: #B4B4C0;   /* secondary / body                  */
-  --fg-3: #7E7E8F;   /* tertiary / captions, placeholders */
-  --fg-4: #54545F;   /* disabled / faint                  */
+  --fg-3: #8B8B9B;   /* tertiary / captions, placeholders (≥4.5:1 on bg-2) */
+  --fg-4: #70707C;   /* disabled / faint                  */
 
   /* ---------- Hairlines & borders ------------------------- */
   --line-1: rgba(255,255,255,0.08);  /* default hairline   */
@@ -136,41 +136,8 @@
 }
 
 /* ============================================================
-   Semantic element styles — apply with these class names or
-   copy the rules. Assumes a dark surface background.
+   Semantic element styles. Only the classes the UI actually uses ship here.
    ============================================================ */
-.cm-display {            /* hero / viral hook headline */
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: var(--text-4xl);
-  line-height: var(--lh-tight);
-  letter-spacing: var(--track-tight);
-  color: var(--fg-1);
-  text-transform: uppercase;
-}
-.cm-h1 {
-  font-family: var(--font-sans);
-  font-weight: 800;
-  font-size: var(--text-3xl);
-  line-height: var(--lh-tight);
-  letter-spacing: var(--track-tight);
-  color: var(--fg-1);
-}
-.cm-h2 {
-  font-family: var(--font-sans);
-  font-weight: 700;
-  font-size: var(--text-2xl);
-  line-height: var(--lh-snug);
-  letter-spacing: var(--track-tight);
-  color: var(--fg-1);
-}
-.cm-h3 {
-  font-family: var(--font-sans);
-  font-weight: 600;
-  font-size: var(--text-xl);
-  line-height: var(--lh-snug);
-  color: var(--fg-1);
-}
 .cm-title {              /* card / section title */
   font-family: var(--font-sans);
   font-weight: 600;
@@ -178,38 +145,10 @@
   line-height: var(--lh-snug);
   color: var(--fg-1);
 }
-.cm-body {
-  font-family: var(--font-sans);
-  font-weight: 400;
-  font-size: var(--text-base);
-  line-height: var(--lh-body);
-  color: var(--fg-2);
-}
 .cm-small {
   font-family: var(--font-sans);
   font-weight: 400;
   font-size: var(--text-sm);
   line-height: var(--lh-snug);
   color: var(--fg-3);
-}
-.cm-label {              /* eyebrow / control label */
-  font-family: var(--font-sans);
-  font-weight: 600;
-  font-size: var(--text-xs);
-  letter-spacing: var(--track-wide);
-  text-transform: uppercase;
-  color: var(--fg-3);
-}
-.cm-mono {               /* logs, code, API keys, timecodes */
-  font-family: var(--font-mono);
-  font-weight: 400;
-  font-size: var(--text-sm);
-  line-height: var(--lh-body);
-  color: var(--fg-2);
-}
-.cm-gradient-text {
-  background: var(--grad-viral);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
