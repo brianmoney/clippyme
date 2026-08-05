@@ -8,7 +8,12 @@ ARG GPU_RUNTIME=cpu
 # ============================================================
 # Stage 2a: NVIDIA CUDA runtime (x86_64 only)
 # ============================================================
-FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04 AS runtime-nvidia
+# Ubuntu 24.04 (glibc 2.39) — the auto-editor releases (v29+) are built on
+# 24.04-era runners and hard-require GLIBC_2.38; the old 22.04 base (2.35)
+# loaded the binary but it died at runtime with "GLIBC_2.38 not found", so
+# Smart Cut silently fell back to FFmpeg. CUDA stays on the 12.x line so the
+# torch cu12 wheels and the NVIDIA pip stack keep matching.
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 AS runtime-nvidia
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -28,6 +33,13 @@ RUN apt-get update && \
     ln -sf /usr/bin/python3.11 /usr/bin/python && \
     ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+    # software-properties-common (used above only for add-apt-repository) pulls
+    # Debian's python3-* packages (pyparsing, six, httplib2, gi, apt, …) into
+    # the shared /usr/lib/python3/dist-packages. python3.11's pip sees those and
+    # fails to REPLACE any it needs ("no RECORD file") — e.g. pyparsing when
+    # requirements.lock pins a different version. The app only uses python3.11
+    # pip-installed packages, so drop the Debian (python3.12) shared dir.
+    rm -rf /usr/lib/python3/dist-packages && \
     rm -rf /var/lib/apt/lists/* && \
     # Install a PINNED auto-editor Nim binary (v30.x track) with sha256
     # verification, so a re-tagged/tampered GitHub asset can't slip in at build
@@ -52,15 +64,37 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 # ============================================================
 # Stage 2b: CPU runtime (multi-arch: amd64, arm64, Apple Silicon)
 # ============================================================
-FROM python:3.11-slim AS runtime-cpu
+# Ubuntu 24.04 (glibc 2.39) instead of the old python:3.11-slim (Debian
+# bookworm, glibc 2.36) — auto-editor needs GLIBC_2.38 (see runtime-nvidia).
+# python 3.11 is kept (via deadsnakes) so the pinned CV/ML wheels (torch,
+# mediapipe 0.10.14, …) are unchanged; the pip bootstrap mirrors runtime-nvidia.
+FROM ubuntu:24.04 AS runtime-cpu
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python3.11-distutils \
     ffmpeg libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 libcairo2 \
     curl unzip ca-certificates gosu && \
     curl -fsSL https://deno.land/install.sh | sh -s v2.8.3 && \
     mv /root/.deno/bin/deno /usr/local/bin/ && \
     rm -rf /root/.deno && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+    # software-properties-common (used above only for add-apt-repository) pulls
+    # Debian's python3-* packages (pyparsing, six, httplib2, gi, apt, …) into
+    # the shared /usr/lib/python3/dist-packages. python3.11's pip sees those and
+    # fails to REPLACE any it needs ("no RECORD file") — e.g. pyparsing when
+    # requirements.lock pins a different version. The app only uses python3.11
+    # pip-installed packages, so drop the Debian (python3.12) shared dir.
+    rm -rf /usr/lib/python3/dist-packages && \
     rm -rf /var/lib/apt/lists/* && \
     # Install a PINNED auto-editor Nim binary (v30.x track) with sha256
     # verification, so a re-tagged/tampered GitHub asset can't slip in at build
