@@ -3,7 +3,7 @@
 // for the old sequential stall — each row showing live queued→uploading→
 // live/error status. Per-clip compose_first honours the clip's toggles.
 import { useState, useEffect, useRef } from 'react';
-import { Icon, Social, Btn, Switch, PlatPill, PLATFORMS } from './primitives';
+import { Icon, Social, Btn, Switch, Stepper, PlatPill, PLATFORMS } from './primitives';
 import { clipVideoSrc } from './realApi';
 import { publishClip, getZernio } from './realApi';
 import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams } from '../lib/seedClipParams';
@@ -17,6 +17,17 @@ export const PLAT = {
   ig: { platform: 'instagram', acct: 'instagram', icon: 'instagram', label: 'Reels' },
   yt: { platform: 'youtube', acct: 'youtube', icon: 'youtube', label: 'Shorts' },
 };
+
+// Curated IANA timezones for the schedule picker (backend validates ZoneInfo,
+// so only valid names). Current stored value is always offered even if absent.
+export const TIMEZONES = [
+  'Europe/Rome', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
+  'Europe/Lisbon', 'Europe/Amsterdam', 'Europe/Stockholm', 'Europe/Athens', 'Europe/Istanbul',
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Toronto', 'America/Mexico_City', 'America/Sao_Paulo',
+  'Asia/Tokyo', 'Asia/Seoul', 'Asia/Shanghai', 'Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore',
+  'Australia/Sydney', 'Africa/Johannesburg', 'Pacific/Auckland',
+];
 
 function PubRow({ clip, idx, st, plats }) {
   // `st` is either a status string or { state, error } so we can surface the
@@ -53,16 +64,46 @@ function PubRow({ clip, idx, st, plats }) {
   );
 }
 
-export function PublishModal({ clips, jobId, clipStates = {}, preselections, onClose, onPublished, pushToast }) {
+export function PublishModal({ clips, jobId, clipStates = {}, preselections, onClose, onPublished, pushToast, onCaptionChange }) {
   const all = clips.length > 1;
   const [zernio, setZernio] = useState(null);
   const [plats, setPlats] = useState({ tiktok: true, ig: true, yt: false });
   const [schedule, setSchedule] = useState(true);
-  const [caption, setCaption] = useState(clips[0]?.tiktok_caption || clips[0]?.video_title_for_youtube_short || '');
+  // Per-clip captions keyed by the clip's array position `_idx`. Seeded from
+  // the persisted per-clip state (grid caption editor), then the clip's own
+  // metadata, so a batch never shares one caption. Edits here write back via
+  // `onCaptionChange` so they survive a close/reopen.
+  const [captions, setCaptions] = useState(() => {
+    const init = {};
+    clips.forEach((clip) => {
+      const idx = clip._idx;
+      const cs = clipStates[idx] || {};
+      init[idx] = cs.caption !== undefined ? cs.caption : (clip.tiktok_caption || clip.video_title_for_youtube_short || '');
+    });
+    return init;
+  });
+  const setCaption = (idx, value) => {
+    setCaptions((m) => ({ ...m, [idx]: value }));
+    onCaptionChange?.(idx, value);
+  };
   const [stage, setStage] = useState('setup'); // setup | uploading | done
   const [progress, setProgress] = useState({});
+  // Scheduled batch knobs: how many clips publish per day (default 1 = the
+  // original one-clip-per-day spacing), how many days from now the schedule
+  // starts, and the prime-time timezone (defaults to the Zernio-config
+  // timezone, override per batch here).
+  const [perDay, setPerDay] = useState(1);
+  const [daysFromNow, setDaysFromNow] = useState(0);
+  const [tz, setTz] = useState('Europe/Rome');
+  const tzTouched = useRef(false);
 
   useEffect(() => { getZernio().then(setZernio).catch(() => setZernio({ configured: false })); }, []);
+
+  // Seed the timezone from the saved Zernio config once it loads, unless the
+  // user already picked one for this batch.
+  useEffect(() => {
+    if (zernio?.timezone && !tzTouched.current) setTz(zernio.timezone);
+  }, [zernio]);
 
   // Accessibility: focus trap + Escape-to-close + focus restore.
   const panelRef = useModalA11y(onClose);
@@ -81,10 +122,11 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
   const ready = zernio?.configured && targets.length > 0;
 
   // `batchPos` is the clip's position within this batch (0-based). When
-  // scheduling, each clip gets its own day (start_date = today + batchPos) so
-  // a per-platform daily cap doesn't reject the tail of the batch — replicates
-  // the one-clip-per-day spacing from the original publisher.
-  const buildBody = (clip, idx, batchPos = 0) => {
+  // scheduling, the schedule starts `daysFromNow` days out and `perDay` clips
+  // share each day: start_date = today + daysFromNow + floor(batchPos / perDay).
+  // The backend SmartScheduler anti-collides clips on the same day (>= min_gap
+  // apart), so X-per-day "just works".
+  const buildBody = (clip, idx, batchPos = 0, scheduleOn = schedule) => {
     const cs = clipStates[idx] || {};
     const toggles = cs.toggles ?? seedToggles(preselections);
     const any = Object.values(toggles).some(Boolean);
@@ -96,11 +138,11 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
     const title = (clip.video_title_for_youtube_short || `Clip ${idx + 1}`).slice(0, 100);
     return {
       title,
-      caption: (caption && caption.trim()) || title,
+      caption: (captions[idx] && captions[idx].trim()) || title,
       platforms: targets,
-      schedule_mode: schedule ? 'auto' : 'now',
-      ...(schedule ? { start_date: localDatePlus(batchPos) } : {}),
-      timezone: zernio?.timezone || 'Europe/Rome',
+      schedule_mode: scheduleOn ? 'auto' : 'now',
+      ...(scheduleOn ? { start_date: localDatePlus(daysFromNow + Math.floor(batchPos / Math.max(1, perDay))) } : {}),
+      timezone: tz.trim() || 'Europe/Rome',
       tiktok_settings: plats.tiktok && accounts.tiktok ? {
         privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: true, allow_duet: true,
         allow_stitch: true, content_preview_confirmed: true, express_consent_given: true,
@@ -109,11 +151,14 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
     };
   };
 
-  const run = async () => {
+  const run = async (forceNow = false) => {
     setStage('uploading');
     const init = {};
     clips.forEach((c) => { init[c._idx] = { state: 'uploading' }; });
     setProgress(init);
+    // `forceNow` overrides the schedule toggle (the "Publish now" button) —
+    // the toggle state must not leak into the body via a stale closure.
+    const scheduleOn = schedule && !forceNow;
     const results = await Promise.allSettled(clips.map(async (clip, batchPos) => {
       const idx = clip._idx;
       // Resolve to the backend's ABSOLUTE `shorts` position for the actual
@@ -121,7 +166,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
       // clipStates/progress, which are unaffected by a manual-publish gap.
       const apiIdx = clip._apiIdx ?? idx;
       try {
-        await publishClip(jobId, apiIdx, buildBody(clip, idx, batchPos));
+        await publishClip(jobId, apiIdx, buildBody(clip, idx, batchPos, scheduleOn));
         setProgress((p) => ({ ...p, [idx]: { state: 'done' } }));
         onPublished?.(idx);
         return true;
@@ -179,23 +224,87 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
                       })}
                     </div>
                   </div>
-                  <div className="field">
-                    <span className="field-label">Caption</span>
-                    <textarea className="ta" rows="3" value={caption} onChange={(e) => setCaption(e.target.value)}></textarea>
-                  </div>
+                  {all ? (
+                    <div className="field">
+                      <span className="field-label">Captions</span>
+                      <div className="capgrid">
+                        {clips.map((clip) => {
+                          const idx = clip._idx;
+                          const clipTitle = clip.video_title_for_youtube_short || `Clip ${idx + 1}`;
+                          return (
+                            <div className="caprow" key={idx}>
+                              <div className="pthumb">
+                                <video src={clipVideoSrc(clip)} muted playsInline preload="metadata"
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                              <div className="capwrap">
+                                <div className="pttl">{clipTitle}</div>
+                                <textarea className="ta" rows="2" maxLength={2200}
+                                  value={captions[idx] || ''}
+                                  placeholder="Caption for this clip"
+                                  aria-label={`Caption for ${clipTitle}`}
+                                  onChange={(e) => setCaption(idx, e.target.value)} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="field">
+                      <span className="field-label">Caption</span>
+                      <textarea className="ta" rows="3" maxLength={2200} value={captions[clips[0]._idx] || ''}
+                        aria-label="Caption"
+                        onChange={(e) => setCaption(clips[0]._idx, e.target.value)}></textarea>
+                    </div>
+                  )}
                   <div className="opt" style={{ borderBottom: 0 }}>
                     <div className="oico"><Icon n="calendar-clock" /></div>
                     <div className="otxt"><div className="ot">Schedule for prime time</div><div className="od">SmartScheduler picks the slot · off = publish now</div></div>
                     <div className="r"><Switch on={schedule} onChange={setSchedule} /></div>
                   </div>
+                  {schedule && (
+                    <>
+                      {all && (
+                        <div className="opt">
+                          <div className="oico"><Icon n="layers" /></div>
+                          <div className="otxt">
+                            <div className="ot">Posts per day</div>
+                            <div className="od">{clips.length} clips → {Math.ceil(clips.length / Math.max(1, perDay))} day{Math.ceil(clips.length / Math.max(1, perDay)) === 1 ? '' : 's'} · starts in {daysFromNow} day{daysFromNow === 1 ? '' : 's'}</div>
+                          </div>
+                          <div className="r"><Stepper value={perDay} set={setPerDay} min={1} max={Math.max(1, clips.length)} label="Posts per day" /></div>
+                        </div>
+                      )}
+                      {all && (
+                        <div className="opt">
+                          <div className="oico"><Icon n="clock" /></div>
+                          <div className="otxt"><div className="ot">Days from now</div><div className="od">Delay the whole schedule by this many days</div></div>
+                          <div className="r"><Stepper value={daysFromNow} set={setDaysFromNow} min={0} max={30} label="Days from now" /></div>
+                        </div>
+                      )}
+                      <div className="opt" style={{ borderBottom: 0 }}>
+                        <div className="oico"><Icon n="globe" /></div>
+                        <div className="otxt"><div className="ot">Timezone</div><div className="od">Prime-time slots are computed in this zone</div></div>
+                        <div className="r">
+                          <select className="key-input" style={{ width: 'auto', maxWidth: 180, fontFamily: 'var(--font-sans)' }}
+                            aria-label="Schedule timezone"
+                            value={tz}
+                            onChange={(e) => { tzTouched.current = true; setTz(e.target.value); }}>
+                            {tz && !TIMEZONES.includes(tz) && <option value={tz}>{tz}</option>}
+                            {TIMEZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
             <div className="modal-foot">
               <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
               <div className="mf-right">
-                <Btn variant="secondary" icon="send" disabled={!ready} onClick={() => { setSchedule(false); run(); }}>Publish now</Btn>
-                <Btn variant="grad" icon="calendar-clock" disabled={!ready} onClick={run}>{schedule ? 'Schedule' : 'Queue'}</Btn>
+                <Btn variant="secondary" icon="send" disabled={!ready} onClick={() => run(true)}>Publish now</Btn>
+                <Btn variant="grad" icon="calendar-clock" disabled={!ready} onClick={() => run()}>{schedule ? 'Schedule' : 'Queue'}</Btn>
               </div>
             </div>
           </>

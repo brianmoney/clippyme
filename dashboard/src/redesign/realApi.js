@@ -179,6 +179,25 @@ export async function publishClip(jobId, index, body) {
   return res.json().catch(() => ({}));
 }
 
+// AI caption optimization: the results page sends a series context + the clip
+// indices whose captions weren't hand-written; the backend pairs each clip's
+// own transcript with that context via an OpenAI-compatible API and returns
+// per-clip captions ({ index, caption } keyed by ABSOLUTE shorts position).
+export async function optimizeCaptions(jobId, { context, indices }) {
+  const res = await apiFetch(getApiUrl(`/api/captions/optimize/${jobId}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context: context || '', indices }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const e = new Error((err.detail || `HTTP ${res.status}`).toString());
+    e.status = res.status;
+    throw e;
+  }
+  return res.json().catch(() => ({}));
+}
+
 export async function restoreJob(jobId) {
   const res = await apiFetch(getApiUrl(`/api/history/${jobId}/restore`), { method: 'POST' });
   if (!res.ok) { const e = new Error('Restore failed'); e.status = res.status; throw e; }

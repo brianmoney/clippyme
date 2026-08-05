@@ -105,7 +105,7 @@ async def get_config(request: Request):
     # Secret keys are never returned verbatim — even short values are masked so
     # a brief key can't leak. Non-secret flags (model/provider) pass through.
     secret_keys = {"GEMINI_API_KEY", "HF_TOKEN", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY",
-                   "YOUTUBE_COOKIES", "TWITCH_CLIENT_SECRET"}
+                   "YOUTUBE_COOKIES", "TWITCH_CLIENT_SECRET", "OPENAI_CAPTIONS_API_KEY"}
     masked = {}
     for k, v in config.items():
         if k in secret_keys and v:

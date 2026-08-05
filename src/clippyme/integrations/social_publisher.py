@@ -27,6 +27,7 @@ import logging
 import os
 import random
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any, Optional
@@ -139,6 +140,13 @@ DEFAULT_SLOT_WINDOWS: dict[int, list[tuple[int, int]]] = {
 }
 
 MIN_GAP_BETWEEN_POSTS_SECONDS = int(os.environ.get("ZERNIO_MIN_GAP_SECONDS", "5400"))  # 90 min
+
+# Serializes the auto-scheduling section (occupancy read → slot pick → post
+# create) across concurrent publish_clip calls. The publish modal fires every
+# clip in parallel; without this lock, N clips scheduled on the same day would
+# each read an empty occupancy list before the others' posts exist and collide
+# (all picking the same slot). Uploads stay outside the lock.
+_SCHEDULE_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -473,83 +481,9 @@ def publish_clip(
 
     client = ZernioClient(api_key)
 
-    # 1. Resolve scheduled_for based on mode
+    # 1. Presign + upload first (concurrent-friendly — the modal uploads every
+    # clip in parallel; the scheduling decision happens after the slow upload).
     publish_now = schedule_mode == "now"
-    final_scheduled_for: Optional[str] = None
-    if schedule_mode == "auto":
-        # Pick a slot today (or tomorrow if it's late), or honour an
-        # explicit start_date from the caller (batch publish UI lets the
-        # user pick the day the schedule should begin).
-        sched = scheduler or SmartScheduler()
-        now = datetime.now(target_timezone)
-        if start_date:
-            try:
-                requested = datetime.strptime(start_date, "%Y-%m-%d").date()
-            except ValueError as exc:
-                raise ValueError(f"invalid start_date, expected YYYY-MM-DD: {start_date}") from exc
-            # Never schedule in the past — bump to today if the user picked
-            # a day that has already passed.
-            target_day = max(requested, now.date())
-        else:
-            target_day = now.date() + timedelta(days=1) if now.hour >= 22 else now.date()
-        date_iso = target_day.strftime("%Y-%m-%d")
-        occupancy_known = True
-        try:
-            posts = client.list_scheduled_posts(date_iso, date_iso)
-            occupied: list[datetime] = []
-            for post in posts:
-                ts = (post.get("scheduledFor") or "").replace("Z", "+00:00")
-                if not ts:
-                    continue
-                try:
-                    stamp = datetime.fromisoformat(ts)
-                    if stamp.tzinfo is None:
-                        stamp = stamp.replace(tzinfo=target_timezone)
-                    else:
-                        stamp = stamp.astimezone(target_timezone)
-                    occupied.append(stamp)
-                except ValueError:
-                    continue
-        except ZernioError as e:
-            logger.warning(
-                "SmartScheduler: scheduling WITHOUT collision data — "
-                "Zernio list_scheduled_posts failed: %s", e,
-            )
-            occupied = []
-            occupancy_known = False
-
-        # Verbose scheduling trace — lets the operator see exactly which
-        # slots were considered occupied and which slot was picked.
-        weekday_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][target_day.weekday()]
-        windows = sched._windows_for(target_day.weekday())
-        windows_str = ", ".join(f"{s:02d}-{e:02d}" for s, e in windows)
-        occupied_str = (
-            ", ".join(o.strftime("%H:%M") for o in sorted(occupied))
-            or ("UNAVAILABLE (collision data missing)" if not occupancy_known else "none")
-        )
-        logger.info(
-            "SmartScheduler: day=%s (%s), prime-time windows=[%s], already occupied: [%s], min_gap=%ds",
-            date_iso, weekday_name, windows_str, occupied_str, sched.min_gap_seconds,
-        )
-        slot = sched.find_slot(target_day, occupied, now=now)
-        # Describe why this slot was chosen
-        in_window = next(
-            (w for w in windows if w[0] <= slot.hour < w[1]),
-            None,
-        )
-        reason = (
-            f"free prime-time window {in_window[0]:02d}-{in_window[1]:02d}"
-            if in_window else "fallback (all prime-time windows busy)"
-        )
-        logger.info(
-            "SmartScheduler: → picked %s (%s), reason: %s",
-            slot.strftime("%Y-%m-%d %H:%M"), weekday_name, reason,
-        )
-        final_scheduled_for = slot.isoformat()
-    elif schedule_mode == "manual":
-        final_scheduled_for = scheduled_for
-
-    # 2. Presign + upload
     filename = os.path.basename(clip_path)
     try:
         size_bytes = os.path.getsize(clip_path)
@@ -566,18 +500,116 @@ def publish_clip(
         raise ZernioError(f"malformed presign response (missing {exc})") from exc
     client.upload_to_presigned(upload_url, clip_path, content_type="video/mp4")
 
-    # 3. Create post
+    # 2. Resolve scheduled_for + create the post. The auto branch runs under a
+    # module lock so a parallel batch's clips each see the previous clip's post
+    # as occupied (SmartScheduler anti-collision) — see _SCHEDULE_LOCK.
+    final_scheduled_for: Optional[str] = None
     media_items = [{"type": "video", "url": public_url}]
-    response = client.create_post(
-        content=effective_content,
-        title=title,
-        media_items=media_items,
-        platforms=platform_targets,
-        scheduled_for=final_scheduled_for,
-        timezone=timezone,
-        publish_now=publish_now,
-        tiktok_settings=tiktok_settings,
-    )
+    if schedule_mode == "auto":
+        with _SCHEDULE_LOCK:
+            # Pick a slot today (or tomorrow if it's late), or honour an
+            # explicit start_date from the caller (batch publish UI lets the
+            # user pick the day the schedule should begin).
+            sched = scheduler or SmartScheduler()
+            now = datetime.now(target_timezone)
+            if start_date:
+                try:
+                    requested = datetime.strptime(start_date, "%Y-%m-%d").date()
+                except ValueError as exc:
+                    raise ValueError(f"invalid start_date, expected YYYY-MM-DD: {start_date}") from exc
+                # Never schedule in the past — bump to today if the user picked
+                # a day that has already passed.
+                target_day = max(requested, now.date())
+            else:
+                target_day = now.date() + timedelta(days=1) if now.hour >= 22 else now.date()
+            date_iso = target_day.strftime("%Y-%m-%d")
+            occupancy_known = True
+            try:
+                # Query a widened range (±1 day) so posts whose stored/UTC date
+                # differs from the LOCAL target day (a timezone-boundary post
+                # scheduled 21:37 America/New_York is 01:37 UTC the NEXT day)
+                # are still seen — otherwise two clips on the same local day
+                # could each read an empty list and collide. Filtered to the
+                # target day below.
+                posts = client.list_scheduled_posts(
+                    (target_day - timedelta(days=1)).strftime("%Y-%m-%d"),
+                    (target_day + timedelta(days=1)).strftime("%Y-%m-%d"),
+                )
+                occupied: list[datetime] = []
+                for post in posts:
+                    ts = (post.get("scheduledFor") or "").replace("Z", "+00:00")
+                    if not ts:
+                        continue
+                    try:
+                        stamp = datetime.fromisoformat(ts)
+                        if stamp.tzinfo is None:
+                            stamp = stamp.replace(tzinfo=target_timezone)
+                        else:
+                            stamp = stamp.astimezone(target_timezone)
+                        if stamp.date() != target_day:
+                            continue
+                        occupied.append(stamp)
+                    except ValueError:
+                        continue
+            except ZernioError as e:
+                logger.warning(
+                    "SmartScheduler: scheduling WITHOUT collision data — "
+                    "Zernio list_scheduled_posts failed: %s", e,
+                )
+                occupied = []
+                occupancy_known = False
+
+            # Verbose scheduling trace — lets the operator see exactly which
+            # slots were considered occupied and which slot was picked.
+            weekday_name = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][target_day.weekday()]
+            windows = sched._windows_for(target_day.weekday())
+            windows_str = ", ".join(f"{s:02d}-{e:02d}" for s, e in windows)
+            occupied_str = (
+                ", ".join(o.strftime("%H:%M") for o in sorted(occupied))
+                or ("UNAVAILABLE (collision data missing)" if not occupancy_known else "none")
+            )
+            logger.info(
+                "SmartScheduler: day=%s (%s), prime-time windows=[%s], already occupied: [%s], min_gap=%ds",
+                date_iso, weekday_name, windows_str, occupied_str, sched.min_gap_seconds,
+            )
+            slot = sched.find_slot(target_day, occupied, now=now)
+            # Describe why this slot was chosen
+            in_window = next(
+                (w for w in windows if w[0] <= slot.hour < w[1]),
+                None,
+            )
+            reason = (
+                f"free prime-time window {in_window[0]:02d}-{in_window[1]:02d}"
+                if in_window else "fallback (all prime-time windows busy)"
+            )
+            logger.info(
+                "SmartScheduler: → picked %s (%s), reason: %s",
+                slot.strftime("%Y-%m-%d %H:%M"), weekday_name, reason,
+            )
+            final_scheduled_for = slot.isoformat()
+            response = client.create_post(
+                content=effective_content,
+                title=title,
+                media_items=media_items,
+                platforms=platform_targets,
+                scheduled_for=final_scheduled_for,
+                timezone=timezone,
+                publish_now=publish_now,
+                tiktok_settings=tiktok_settings,
+            )
+    else:
+        if schedule_mode == "manual":
+            final_scheduled_for = scheduled_for
+        response = client.create_post(
+            content=effective_content,
+            title=title,
+            media_items=media_items,
+            platforms=platform_targets,
+            scheduled_for=final_scheduled_for,
+            timezone=timezone,
+            publish_now=publish_now,
+            tiktok_settings=tiktok_settings,
+        )
 
     # 4. Extract post id (response shape varies)
     post_obj = response.get("post") if isinstance(response, dict) else None
