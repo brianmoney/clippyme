@@ -11,6 +11,7 @@ import {
 } from './realApi';
 import { SUB_FONTS } from './data';
 import { getApiToken, setApiToken } from '../lib/apiToken';
+import { relTime } from '../lib/relTime';
 
 // Curated fallback when live discovery is unavailable (no key yet / offline).
 // Mirrors the allow-list prefixes (gemini-2.5- / gemini-3) the backend accepts.
@@ -20,15 +21,6 @@ const FALLBACK_MODELS = [
   { name: 'gemini-3.1-pro-preview', display_name: 'Gemini 3.1 Pro — max quality' },
   { name: 'gemini-2.5-pro', display_name: 'Gemini 2.5 Pro — max quality' },
 ];
-
-function relTime(ts) {
-  if (!ts) return '';
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
 
 export function HistoryView({ history, availableIds, onOpen, onDelete, onClear }) {
   if (!history.length) {
@@ -80,7 +72,7 @@ export function HistoryView({ history, availableIds, onOpen, onDelete, onClear }
               </div>
               <div className="hr">
                 {!removed && h.publishedCount > 0 && (
-                  <Badge tone="teal" icon="send">{h.publishedCount} pubblicate</Badge>
+                  <Badge tone="teal" icon="send">{h.publishedCount} published</Badge>
                 )}
                 {removed ? <Badge tone="out" icon="triangle-alert">unavailable</Badge>
                   : h.status === 'complete' ? <Badge tone="teal" icon="check">complete</Badge>

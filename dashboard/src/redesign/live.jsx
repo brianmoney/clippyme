@@ -13,6 +13,7 @@ import { toComposeSubtitleParams, fromComposeSubtitleParams } from '../lib/subti
 import { BannerControls } from './bannerControls';
 import { SubtitleControls } from './subtitleControls';
 import { useLiveMonitorStatus } from '../hooks/useLiveMonitorStatus';
+import { relTime } from '../lib/relTime';
 
 // SubtitleControls is fully controlled with no built-in defaults (see
 // subtitleControls.jsx) — this is the same default set create.jsx's
@@ -69,16 +70,6 @@ const SLUG_PLACEHOLDER = {
   twitch: 'e.g. xqc',
   youtube: '@handle or https://youtube.com/@handle',
 };
-
-// ISO timestamp → coarse relative time for the Gemini-exhaustion notice.
-function relTime(iso) {
-  if (!iso) return '';
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m fa`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h fa`;
-  return `${Math.floor(s / 86400)}g fa`;
-}
 
 // Seconds → minutes for the drawer's minute inputs; '' (blank) when unset so
 // "Apply" still treats an untouched field as untouched.
@@ -237,7 +228,7 @@ function MonitorCard({ monitor, onStop, stopping, onApplySettings, applyingSetti
           {monitor.last_error && <div className="od" style={{ color: 'var(--danger)' }}>{monitor.last_error}</div>}
           {monitor.gemini_exhausted_at && (
             <div className="od" style={{ color: 'var(--brand-amber)' }}>
-              Gemini rate-limited — ultimo segmento saltato ({relTime(monitor.gemini_exhausted_at)})
+              Gemini rate-limited — last segment skipped ({relTime(monitor.gemini_exhausted_at)})
             </div>
           )}
         </div>
@@ -300,7 +291,7 @@ export function LiveMonitorView({ pushToast }) {
   const [applyingSettingsId, setApplyingSettingsId] = useState(null);
   const [togglingPublishingId, setTogglingPublishingId] = useState(null);
 
-  const [monitors, refreshMonitors] = useLiveMonitorStatus();
+  const [monitors, refreshMonitors, meta] = useLiveMonitorStatus();
 
   useEffect(() => { getZernio().then(setZernio).catch(() => setZernio({ configured: false })); }, []);
 
@@ -393,7 +384,11 @@ export function LiveMonitorView({ pushToast }) {
         sub="Watches a channel across sessions, captures/processes new content, and publishes clips as they're ready — spaced apart on socials." />
 
       <Panel title="Monitors" icon="rss" style={{ marginBottom: 18 }}>
-        {monitors.length === 0 && <div className="od">No monitors running.</div>}
+        {/* Distinguish "backend unreachable" from a true empty list — the poll
+            swallows errors into `meta`, so without this an outage renders the
+            same "No monitors running." as a healthy idle. */}
+        {meta.error && <div className="od" style={{ color: 'var(--danger)' }}>Can&apos;t reach the backend — monitor status unknown.</div>}
+        {!meta.error && monitors.length === 0 && !meta.loading && <div className="od">No monitors running.</div>}
         {monitors.map((m) => (
           <MonitorCard key={m.id} monitor={m} onStop={onStop} stopping={stoppingId === m.id}
             onApplySettings={onApplySettings} applyingSettings={applyingSettingsId === m.id}
@@ -444,14 +439,14 @@ export function LiveMonitorView({ pushToast }) {
             <label className="field">
               <span className="field-label">Segment (min)</span>
               <input className="key-input" type="number" min="1" max="60" aria-label="Segment minutes"
-                value={segmentMin} onChange={(e) => setSegmentMin(Number(e.target.value))} />
+                value={segmentMin} onChange={(e) => setSegmentMin(e.target.value === '' ? '' : Number(e.target.value))} />
             </label>
           )}
           {platform !== 'youtube' && (
             <label className="field">
               <span className="field-label">Prelive skip (min)</span>
               <input className="key-input" type="number" min="0" max="120" aria-label="Prelive skip minutes"
-                value={preliveMin} onChange={(e) => setPreliveMin(Number(e.target.value))} />
+                value={preliveMin} onChange={(e) => setPreliveMin(e.target.value === '' ? '' : Number(e.target.value))} />
               <div className="od">Drops the waiting screen at the head of the {isVod ? 'recording' : 'stream'}.</div>
             </label>
           )}
@@ -472,14 +467,14 @@ export function LiveMonitorView({ pushToast }) {
             <label className="field" style={{ marginBottom: 0 }}>
               <span className="field-label">{clipSelection === 'auto' ? 'Max clips' : 'Clips'}</span>
               <input className="key-input" type="number" min="0" max="1000" aria-label="Clips per segment"
-                value={maxClips} onChange={(e) => setMaxClips(Number(e.target.value))} />
+                value={maxClips} onChange={(e) => setMaxClips(e.target.value === '' ? '' : Number(e.target.value))} />
               <div className="od">0 = no limit — publish every clip the segment yields.</div>
             </label>
             {clipSelection === 'auto' && (
               <label className="field" style={{ marginBottom: 0 }}>
                 <span className="field-label">Min viral score</span>
                 <input className="key-input" type="number" min="1" max="100" aria-label="Minimum viral score"
-                  value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />
+                  value={minScore} onChange={(e) => setMinScore(e.target.value === '' ? '' : Number(e.target.value))} />
               </label>
             )}
           </div>
@@ -564,7 +559,7 @@ export function LiveMonitorView({ pushToast }) {
         <label className="field">
           <span className="field-label">Min gap (min)</span>
           <input className="key-input" type="number" min="0" max="1440" aria-label="Minimum publish gap minutes"
-            value={minGapMin} onChange={(e) => setMinGapMin(Number(e.target.value))} />
+            value={minGapMin} onChange={(e) => setMinGapMin(e.target.value === '' ? '' : Number(e.target.value))} />
           <div className="od">Minimum spacing between two scheduled posts — shared across every running monitor.</div>
         </label>
 

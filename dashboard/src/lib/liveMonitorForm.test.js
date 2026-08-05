@@ -60,8 +60,8 @@ test('clampMonitorTimings: defaults pass through in seconds', () => {
   });
 });
 
-test('clampMonitorTimings: cleared input (0/NaN) never 422s', () => {
-  // Number('') === 0 → segment would be 0 (< schema min 60) without clamping.
+test("clampMonitorTimings: cleared input (0/NaN/'') never 422s", () => {
+  // An explicit 0 clamps to the schema minimum, never a 422.
   const zeroed = clampMonitorTimings(0, 0, 0);
   assert.equal(zeroed.segment_seconds, 60);
   assert.equal(zeroed.prelive_skip_seconds, 0);
@@ -70,6 +70,19 @@ test('clampMonitorTimings: cleared input (0/NaN) never 422s', () => {
   assert.deepEqual(clampMonitorTimings(NaN, NaN, NaN), {
     segment_seconds: 1800, prelive_skip_seconds: 1800, min_gap_seconds: 900,
   });
+});
+
+test('clampMonitorTimings: blank string means untouched, not zero', () => {
+  // A cleared number input is '' (Number('') === 0): it must fall back to the
+  // schema default like clipSelectionPayload, not silently become 60 seconds.
+  assert.deepEqual(clampMonitorTimings('', '', ''), {
+    segment_seconds: 1800, prelive_skip_seconds: 1800, min_gap_seconds: 900,
+  });
+  // Mixed: blank segment + real values elsewhere.
+  const mixed = clampMonitorTimings('', 5, 10);
+  assert.equal(mixed.segment_seconds, 1800);
+  assert.equal(mixed.prelive_skip_seconds, 300);
+  assert.equal(mixed.min_gap_seconds, 600);
 });
 
 test('clampMonitorTimings: values above schema caps are clamped', () => {

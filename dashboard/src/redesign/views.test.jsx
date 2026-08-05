@@ -121,7 +121,7 @@ test('history row shows the video title and a published-count badge when clips w
   render(<HistoryView history={history} availableIds={null} onOpen={vi.fn()} onDelete={vi.fn()} onClear={vi.fn()} />);
 
   expect(screen.getByText('my video')).toBeInTheDocument();
-  expect(screen.getByText('1 pubblicate')).toBeInTheDocument();
+  expect(screen.getByText('1 published')).toBeInTheDocument();
   expect(screen.getByText('other video')).toBeInTheDocument();
-  expect(screen.queryByText('0 pubblicate')).toBeNull();
+  expect(screen.queryByText('0 published')).toBeNull();
 });
