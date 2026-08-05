@@ -89,6 +89,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
     setCaptions((m) => ({ ...m, [idx]: value }));
     onCaptionChange?.(idx, value);
   };
+  const [profileId, setProfileId] = useState(null);
   const [stage, setStage] = useState('setup'); // setup | uploading | done
   const [progress, setProgress] = useState({});
   // Scheduled batch knobs: how many clips publish per day (default 1 = the
@@ -100,29 +101,38 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
   const [tz, setTz] = useState('Europe/Rome');
   const tzTouched = useRef(false);
 
-  useEffect(() => { getZernio().then(setZernio).catch(() => setZernio({ configured: false })); }, []);
-
-  // Seed the timezone from the saved Zernio config once it loads, unless the
-  // user already picked one for this batch.
   useEffect(() => {
-    if (zernio?.timezone && !tzTouched.current) setTz(zernio.timezone);
-  }, [zernio]);
+    getZernio().then((z) => {
+      setZernio(z);
+      if (z?.default_profile_id) setProfileId(z.default_profile_id);
+    }).catch(() => setZernio({ configured: false, profiles: [] }));
+  }, []);
 
   // Accessibility: focus trap + Escape-to-close + focus restore.
   const panelRef = useModalA11y(onClose);
-
   // Guard the post-publish setTimeout so it never calls setState after the
   // modal has been unmounted (e.g. parent closes it while the delay is in flight).
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
-  const accounts = zernio?.accounts || {};
+  // The profile resolves to the selected one, falling back to the default.
+  // `accounts` (per-platform account IDs) belong to that profile — each Zernio
+  // API key owns its own social accounts, so platforms must be targetted with
+  // the profile the user confirmed.
+  const profiles = zernio?.profiles || [];
+  const profile = profiles.find((p) => p.id === profileId) || profiles.find((p) => p.is_default) || profiles[0] || null;
+  const accounts = profile?.accounts || {};
+  // Seed the batch schedule timezone from the selected profile's timezone once
+  // it resolves (unless the user already picked one for this batch).
+  useEffect(() => {
+    if (profile?.timezone && !tzTouched.current) setTz(profile.timezone);
+  }, [profile]);
   const toggle = (k) => setPlats((p) => ({ ...p, [k]: !p[k] }));
   const platTargets = () => Object.keys(plats)
     .filter((k) => plats[k] && accounts[PLAT[k].acct])
     .map((k) => ({ platform: PLAT[k].platform, accountId: accounts[PLAT[k].acct] }));
   const targets = platTargets();
-  const ready = zernio?.configured && targets.length > 0;
+  const ready = !!profile?.api_key_masked && targets.length > 0;
 
   // `batchPos` is the clip's position within this batch (0-based). When
   // scheduling, the schedule starts `daysFromNow` days out and `perDay` clips
@@ -146,6 +156,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
       schedule_mode: scheduleOn ? 'auto' : 'now',
       ...(scheduleOn ? { start_date: localDatePlus(daysFromNow + Math.floor(batchPos / Math.max(1, perDay))) } : {}),
       timezone: tz.trim() || 'Europe/Rome',
+      ...(profile?.id ? { profile_id: profile.id } : {}),
       tiktok_settings: plats.tiktok && accounts.tiktok ? {
         privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: true, allow_duet: true,
         allow_stitch: true, content_preview_confirmed: true, express_consent_given: true,
@@ -209,21 +220,36 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
         {stage === 'setup' && (
           <>
             <div className="modal-body">
-              {!zernio ? <div className="cm-small">Loading Zernio…</div> : !zernio.configured ? (
+              {!zernio ? <div className="cm-small">Loading Zernio…</div> : !profiles.length ? (
                 <div className="empty" style={{ padding: '24px 12px' }}>
                   <div className="ei"><Icon n="rss" /></div>
                   <h3>Zernio not connected</h3>
-                  <p>Add your Zernio API key + account IDs in Settings to publish.</p>
+                  <p>Add a Zernio profile (API key + account IDs) in Settings to publish.</p>
                 </div>
               ) : (
                 <>
+                  <div className="field">
+                    <span className="field-label">Publishing account</span>
+                    <select className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                      aria-label="Zernio profile" value={profile?.id || ''}
+                      onChange={(e) => setProfileId(e.target.value || null)}>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.is_default ? ' · default' : ''} · {p.api_key_masked || 'no key saved'}
+                        </option>
+                      ))}
+                    </select>
+                    {profile && <div className="cm-small" style={{ marginTop: 6, color: 'var(--fg-3)' }}>
+                      Confirming publish sends clips to <strong>{profile.name}</strong>{profile.api_key_masked ? ` (${profile.api_key_masked})` : ''}. Platforms below are that account&apos;s IDs.
+                    </div>}
+                  </div>
                   <div className="field">
                     <span className="field-label">Platforms</span>
                     <div className="plats">
                       {PLATFORMS.map((p) => {
                         const has = !!accounts[PLAT[p.id].acct];
                         return <PlatPill key={p.id} {...p} on={plats[p.id] && has}
-                          onClick={() => has ? toggle(p.id) : pushToast?.('warn', `No ${PLAT[p.id].label} account saved`)} />;
+                          onClick={() => has ? toggle(p.id) : pushToast?.('warn', `No ${PLAT[p.id].label} account saved for ${profile?.name || 'this profile'}`)} />;
                       })}
                     </div>
                   </div>

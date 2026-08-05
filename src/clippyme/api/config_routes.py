@@ -18,14 +18,14 @@ import struct
 import tempfile
 from typing import Optional
 
-from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, Query, Request, UploadFile
 
 from clippyme.api.schemas import ConfigUpdateRequest, ZernioConfigRequest
 from clippyme.api.security import require_trusted_config_request
 from clippyme.pipeline.gemini_service import list_available_models
 from clippyme.storage.config_store import (
+    get_zernio_profile,
     load_persistent_config,
-    load_zernio_config,
     save_persistent_config,
     save_zernio_config,
     zernio_config_status,
@@ -340,13 +340,23 @@ async def get_zernio_config(request: Request):
 
 @router.post("/api/config/zernio")
 async def update_zernio_config(req: ZernioConfigRequest, request: Request):
-    """Update Zernio API key + accounts + timezone (merge semantics)."""
+    """Update Zernio API keys + accounts + timezone (merge semantics).
+
+    When ``req.profiles`` is provided it replaces the whole profile list (the
+    dashboard editor owns it); the legacy top-level fields update the default
+    profile for back-compat clients.
+    """
     require_trusted_config_request(request)
+    profiles = (
+        [p.model_dump() for p in req.profiles]
+        if req.profiles is not None else None
+    )
     ok = await asyncio.to_thread(
         save_zernio_config,
         api_key=req.api_key,
         accounts=req.accounts,
         timezone=req.timezone,
+        profiles=profiles,
     )
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to save Zernio config")
@@ -354,11 +364,15 @@ async def update_zernio_config(req: ZernioConfigRequest, request: Request):
 
 
 @router.get("/api/zernio/accounts")
-async def list_zernio_accounts(request: Request):
-    """Discovery: list connected social accounts via Zernio API."""
+async def list_zernio_accounts(request: Request, profile_id: Optional[str] = Query(None, max_length=64)):
+    """Discovery: list connected social accounts via Zernio API.
+
+    ``profile_id`` selects which Zernio profile's key to query (defaults to the
+    default profile), so each account gets its own discovered platform IDs.
+    """
     require_trusted_config_request(request)
-    cfg = await asyncio.to_thread(load_zernio_config)
-    api_key = cfg.get("api_key")
+    profile = await asyncio.to_thread(get_zernio_profile, profile_id)
+    api_key = (profile or {}).get("api_key")
     if not api_key:
         raise HTTPException(status_code=400, detail="Zernio API key not configured")
     from clippyme.integrations.social_publisher import ZernioClient, ZernioError
@@ -367,4 +381,4 @@ async def list_zernio_accounts(request: Request):
         accounts = await asyncio.to_thread(client.list_accounts)
     except ZernioError as e:
         raise HTTPException(status_code=502, detail=f"Zernio API error: {e}")
-    return {"accounts": accounts}
+    return {"accounts": accounts, "profile_id": (profile or {}).get("id")}

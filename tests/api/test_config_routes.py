@@ -215,6 +215,58 @@ def test_zernio_config_roundtrip(client):
 
 def test_zernio_accounts_requires_key(client, monkeypatch):
     # No key configured (fresh tmp cwd) → 400 before any network call.
-    monkeypatch.setattr(config_module, "load_zernio_config", lambda: {})
+    monkeypatch.setattr(config_module, "get_zernio_profile", lambda *_: None)
     r = client.get("/api/zernio/accounts")
     assert r.status_code == 400
+
+
+def test_zernio_profiles_roundtrip(client):
+    r = client.post(
+        "/api/config/zernio",
+        json={"profiles": [
+            {"name": "Client A", "api_key": "sk_profile_one_key", "is_default": True},
+            {"name": "Client B", "api_key": "sk_profile_two_key"},
+        ]},
+    )
+    assert r.status_code == 200
+    status = r.json()
+    # Keys must never echo verbatim.
+    assert "sk_profile_one_key" not in str(status)
+    assert status["configured"] is True
+    assert len(status["profiles"]) == 2
+    by_name = {p["name"]: p for p in status["profiles"]}
+    assert by_name["Client A"]["is_default"] is True
+    assert by_name["Client B"]["is_default"] is False
+    assert status["default_profile_id"] == by_name["Client A"]["id"]
+
+    got = client.get("/api/config/zernio").json()
+    assert len(got["profiles"]) == 2
+
+
+def test_zernio_discover_uses_selected_profile_key(client, monkeypatch):
+    import clippyme.integrations.social_publisher as sp
+
+    r = client.post(
+        "/api/config/zernio",
+        json={"profiles": [
+            {"name": "Client A", "api_key": "sk_default_key_a", "is_default": True},
+            {"name": "Client B", "api_key": "sk_profile_key_b"},
+        ]},
+    )
+    assert r.status_code == 200
+    pid = r.json()["profiles"][1]["id"]
+
+    used = {}
+
+    class FakeClient:
+        def __init__(self, api_key):
+            used["api_key"] = api_key
+
+        def list_accounts(self):
+            return [{"platform": "tiktok", "id": "tt1"}]
+
+    monkeypatch.setattr(sp, "ZernioClient", FakeClient)
+    r = client.get(f"/api/zernio/accounts?profile_id={pid}")
+    assert r.status_code == 200
+    assert used["api_key"] == "sk_profile_key_b"
+    assert r.json()["profile_id"] == pid

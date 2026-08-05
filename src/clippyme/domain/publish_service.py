@@ -22,14 +22,16 @@ logger = logging.getLogger("clippyme")
 
 async def publish_clip_flow(*, job_id: str, clip_index: int,
                             resolved: ResolvedClip, req: dict,
-                            zernio_cfg: dict) -> dict:
+                            profile: dict) -> dict:
     """Compose (optionally) and upload one clip to Zernio.
 
     ``req`` is ``PublishRequest.model_dump()``; ``resolved`` comes from
     ``resolve_clip(..., require_file=False)`` — the base clip may be absent
-    when a composed file exists on disk.
+    when a composed file exists on disk. ``profile`` is the resolved Zernio
+    profile dict (``{id, name, api_key, is_default, accounts, timezone}``) —
+    the account the caller confirmed the publish against.
     """
-    api_key = zernio_cfg.get("api_key")
+    api_key = (profile or {}).get("api_key")
     if not api_key:
         raise ValidationError("Zernio API key not configured")
 
@@ -88,7 +90,7 @@ async def publish_clip_flow(*, job_id: str, clip_index: int,
             platform_targets=req.get("platforms"),
             schedule_mode=req.get("schedule_mode"),
             scheduled_for=req.get("scheduled_for"),
-            timezone=req.get("timezone") or zernio_cfg.get("timezone") or "Europe/Rome",
+            timezone=req.get("timezone") or (profile or {}).get("timezone") or "Europe/Rome",
             tiktok_settings=req.get("tiktok_settings"),
             start_date=req.get("start_date"),
         )
@@ -126,6 +128,8 @@ async def publish_clip_flow(*, job_id: str, clip_index: int,
                 "post_id": result.get("post_id"),
                 "scheduled_for": result.get("scheduled_for"),
                 "at": datetime.now(timezone.utc).isoformat(),
+                "profile_id": (profile or {}).get("id"),
+                "profile_name": (profile or {}).get("name"),
             },
         )
     except Exception as e:

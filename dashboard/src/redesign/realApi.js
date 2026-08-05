@@ -334,8 +334,9 @@ export async function saveZernio(payload) {
   return res.json().catch(() => ({}));
 }
 
-export async function discoverZernioAccounts() {
-  const res = await apiFetch(getApiUrl('/api/zernio/accounts'));
+export async function discoverZernioAccounts(profileId) {
+  const q = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(getApiUrl(`/api/zernio/accounts${q}`));
   if (!res.ok) throw new Error('Discover failed');
   return res.json();
 }

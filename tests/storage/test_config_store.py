@@ -117,7 +117,120 @@ def test_zernio_status_masks_key(tmp_config):
 def test_zernio_status_unconfigured(tmp_config):
     status = config_store.zernio_config_status()
     assert status["configured"] is False
-    assert status["api_key_masked"] == ""
+
+
+def test_zernio_profiles_save_load_default(tmp_config):
+    profiles = [
+        {"name": "Client A", "api_key": "sk_aaaaaaaa_key_a", "is_default": True},
+        {"name": "Client B", "api_key": "sk_bbbbbbbb_key_b"},
+    ]
+    assert config_store.save_zernio_config(profiles=profiles)
+    z = config_store.load_zernio_config()
+    assert len(z["profiles"]) == 2
+    assert z["profiles"][0]["id"] and z["profiles"][1]["id"]
+    assert z["profiles"][0]["id"] != z["profiles"][1]["id"]
+    default = z["default_profile"]
+    assert default["name"] == "Client A"
+    assert default["api_key"] == "sk_aaaaaaaa_key_a"
+    # Legacy fields stay in sync with the default profile.
+    assert z["api_key"] == "sk_aaaaaaaa_key_a"
+    assert z["timezone"] == "Europe/Rome"
+
+
+def test_zernio_profile_blank_key_keeps_existing(tmp_config):
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "sk_aaaaaaaa_key_a", "is_default": True},
+    ])
+    pid = config_store.load_zernio_config()["default_profile"]["id"]
+    # Editor round-trip: existing profiles come back with a blank api_key.
+    assert config_store.save_zernio_config(profiles=[
+        {"id": pid, "name": "Client A", "api_key": "", "is_default": True},
+    ])
+    assert config_store.load_zernio_config()["default_profile"]["api_key"] == "sk_aaaaaaaa_key_a"
+
+
+def test_zernio_profiles_switch_default(tmp_config):
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "sk_a_key_a", "is_default": True},
+        {"name": "Client B", "api_key": "sk_b_key_b"},
+    ])
+    profiles = config_store.load_zernio_config()["profiles"]
+    b_id = profiles[1]["id"]
+    assert config_store.save_zernio_config(profiles=[
+        {"id": profiles[0]["id"], "name": "Client A", "api_key": "", "is_default": False},
+        {"id": b_id, "name": "Client B", "api_key": "", "is_default": True},
+    ])
+    z = config_store.load_zernio_config()
+    assert z["default_profile"]["name"] == "Client B"
+    assert z["api_key"] == "sk_b_key_b"
+
+
+def test_zernio_legacy_key_synthesized_as_default_profile(tmp_config):
+    config_store.save_zernio_config(api_key="sk_legacy_key_1234")
+    z = config_store.load_zernio_config()
+    assert z["default_profile"]["name"] == "Default"
+    assert z["default_profile"]["api_key"] == "sk_legacy_key_1234"
+    assert z["api_key"] == "sk_legacy_key_1234"
+
+
+def test_zernio_legacy_migration_save_keeps_key(tmp_config):
+    # Pre-profiles layout → user opens the editor (blank key) → saves. The key
+    # must survive via the synthesized "default" profile.
+    config_store.save_zernio_config(api_key="sk_legacy_key_1234")
+    assert config_store.save_zernio_config(profiles=[
+        {"id": "default", "name": "Default", "api_key": "", "is_default": True},
+    ])
+    z = config_store.load_zernio_config()
+    assert z["default_profile"]["api_key"] == "sk_legacy_key_1234"
+    assert z["profiles"][0]["id"] == "default"
+
+
+def test_zernio_status_reports_profiles(tmp_config):
+    config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "sk_abcdef_key_one", "is_default": True},
+        {"name": "Client B", "api_key": "sk_ghijkl_key_two"},
+    ])
+    status = config_store.zernio_config_status()
+    assert status["configured"] is True
+    assert status["default_profile_id"] == config_store.load_zernio_config()["default_profile"]["id"]
+    assert len(status["profiles"]) == 2
+    by_name = {p["name"]: p for p in status["profiles"]}
+    assert by_name["Client A"]["is_default"] is True
+    assert by_name["Client B"]["is_default"] is False
+    assert "key_one" not in by_name["Client A"]["api_key_masked"]
+    assert "..." in by_name["Client A"]["api_key_masked"]
+
+
+def test_zernio_profiles_invalid_rejected(tmp_config):
+    # Duplicate names.
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "k1"},
+        {"name": "Client A", "api_key": "k2"},
+    ]) is False
+    # Two defaults.
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "k1", "is_default": True},
+        {"name": "Client B", "api_key": "k2", "is_default": True},
+    ]) is False
+    # Over the profile cap.
+    many = [
+        {"name": f"Client {i}", "api_key": f"k{i}"}
+        for i in range(config_store.ZERNIO_MAX_PROFILES + 1)
+    ]
+    assert config_store.save_zernio_config(profiles=many) is False
+
+
+def test_get_zernio_profile_by_id_and_default(tmp_config):
+    config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "k1", "is_default": True},
+        {"name": "Client B", "api_key": "k2"},
+    ])
+    profiles = config_store.load_zernio_config()["profiles"]
+    b_id = profiles[1]["id"]
+    assert config_store.get_zernio_profile(b_id)["name"] == "Client B"
+    # Unknown id falls back to the default profile.
+    assert config_store.get_zernio_profile("nope")["name"] == "Client A"
+    assert config_store.get_zernio_profile()["name"] == "Client A"
 
 
 def test_failed_atomic_write_preserves_previous_config(tmp_config, monkeypatch):

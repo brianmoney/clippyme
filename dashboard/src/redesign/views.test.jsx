@@ -8,6 +8,8 @@ import { SettingsView, HistoryView } from './views.jsx';
 
 const getConfig = vi.fn();
 const saveConfig = vi.fn();
+const getZernio = vi.fn();
+const saveZernio = vi.fn();
 
 vi.mock('./realApi', () => ({
   getConfig: (...a) => getConfig(...a),
@@ -16,8 +18,8 @@ vi.mock('./realApi', () => ({
   cookiesStatus: vi.fn(async () => ({ configured: false })),
   uploadCookies: vi.fn(),
   deleteCookies: vi.fn(),
-  getZernio: vi.fn(async () => ({ configured: false })),
-  saveZernio: vi.fn(),
+  getZernio: (...a) => getZernio(...a),
+  saveZernio: (...a) => saveZernio(...a),
   discoverZernioAccounts: vi.fn(),
   listFonts: vi.fn(async () => ({ fonts: [] })),
   uploadFont: vi.fn(),
@@ -33,6 +35,8 @@ const SET_CONFIG = { ...EMPTY_CONFIG, GEMINI_API_KEY: 'AIza...xyz1' };
 beforeEach(() => {
   vi.clearAllMocks();
   saveConfig.mockResolvedValue({ success: true });
+  getZernio.mockResolvedValue({ configured: false, profiles: [] });
+  saveZernio.mockResolvedValue({ configured: true, profiles: [] });
 });
 
 function mount(pushToast = vi.fn()) {
@@ -109,6 +113,55 @@ test('Twitch client id/secret rows show empty when unset', async () => {
   mount();
   const idRow = () => screen.getByLabelText('Twitch client ID').closest('.keyrow');
   await waitFor(() => expect(within(idRow()).getByText('empty')).toBeInTheDocument());
+});
+
+// --- Zernio profile editor -------------------------------------------------
+
+// Scope queries to the Publishing panel — the AI captions panel also has a
+// Save button, so a bare `getByRole('button', { name: 'Save' })` would be ambiguous.
+const publishingPanel = () => screen.getByRole('heading', { name: 'Publishing' }).closest('.panel');
+const zernioSave = () => within(publishingPanel()).getByRole('button', { name: 'Save' });
+
+test('Zernio profiles load and save posts the whole editable list', async () => {
+  getConfig.mockResolvedValue(EMPTY_CONFIG);
+  getZernio.mockResolvedValue({
+    configured: true,
+    default_profile_id: 'p1',
+    profiles: [
+      { id: 'p1', name: 'Client A', api_key_masked: 'sk_ab...cd', is_default: true, accounts: { tiktok: 'tt1' }, timezone: 'Europe/Rome' },
+      { id: 'p2', name: 'Client B', api_key_masked: 'sk_ef...gh', is_default: false, accounts: {}, timezone: 'Europe/Rome' },
+    ],
+  });
+  saveZernio.mockResolvedValue({ configured: true, profiles: [] });
+  mount();
+  await waitFor(() => expect(screen.getByDisplayValue('Client A')).toBeInTheDocument());
+  expect(screen.getByDisplayValue('Client B')).toBeInTheDocument();
+
+  fireEvent.click(zernioSave());
+  await waitFor(() => expect(saveZernio).toHaveBeenCalledTimes(1));
+  const payload = saveZernio.mock.calls[0][0].profiles;
+  expect(payload).toHaveLength(2);
+  expect(payload[0]).toMatchObject({ id: 'p1', name: 'Client A', is_default: true });
+  // Keys are blanked in the editor so an unchanged save keeps the stored key.
+  expect(payload[0].api_key).toBe('');
+  expect(payload[1]).toMatchObject({ id: 'p2', name: 'Client B', is_default: false });
+});
+
+test('adding a Zernio profile marks it default when none exist', async () => {
+  getConfig.mockResolvedValue(EMPTY_CONFIG);
+  getZernio.mockResolvedValue({ configured: false, profiles: [] });
+  saveZernio.mockResolvedValue({ configured: true, profiles: [] });
+  mount();
+  await waitFor(() => expect(screen.getByText(/Add a named profile/)).toBeInTheDocument());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Add profile' }));
+  expect(screen.getByLabelText('Profile 1 name')).toBeInTheDocument();
+
+  fireEvent.click(zernioSave());
+  await waitFor(() => expect(saveZernio).toHaveBeenCalledTimes(1));
+  const payload = saveZernio.mock.calls[0][0].profiles;
+  expect(payload).toHaveLength(1);
+  expect(payload[0].is_default).toBe(true);
 });
 
 // HistoryView — title + per-job "published" badge (derived from

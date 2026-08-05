@@ -10,7 +10,6 @@ import {
   listFonts, uploadFont, deleteFont, logoStatus, uploadLogo, deleteLogo,
 } from './realApi';
 import { SUB_FONTS } from './data';
-import { TIMEZONES } from './publish';
 import { getApiToken, setApiToken } from '../lib/apiToken';
 import { relTime } from '../lib/relTime';
 
@@ -133,9 +132,9 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
   const [apiToken, setApiTokenState] = useState(() => getApiToken());
   const [present, setPresent] = useState({});
   const [zernio, setZernioState] = useState(null);
-  const [zKey, setZKey] = useState('');
-  const [zTz, setZTz] = useState('Europe/Rome');
-  const [accts, setAccts] = useState({ tiktok: '', instagram: '', youtube: '' });
+  // Editable Zernio profiles: {id, name, api_key (raw, blank = keep), is_default, accounts, timezone}
+  const [profiles, setProfiles] = useState([]);
+  const [discovering, setDiscovering] = useState(null);
   const [cookies, setCookies] = useState(!!cookiesConfigured);
   const [logoOn, setLogoOn] = useState(false);
   const [fonts, setFonts] = useState([]);
@@ -181,7 +180,13 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
 
   useEffect(() => {
     refreshConfig().then(loadModels);
-    getZernio().then((z) => { setZernioState(z); if (z.accounts) setAccts({ tiktok: '', instagram: '', youtube: '', ...z.accounts }); setZTz(z.timezone || 'Europe/Rome'); }).catch(() => {});
+    getZernio().then((z) => {
+      setZernioState(z);
+      // Loaded profiles carry api_key_masked, never the raw key — reset the
+      // editor's raw key field so a blank save keeps the stored key server-side.
+      setProfiles(((z.profiles && z.profiles.length) ? z.profiles : [])
+        .map((p) => ({ ...p, api_key: '' })));
+    }).catch(() => {});
     cookiesStatus().then((s) => setCookies(!!s.configured)).catch(() => {});
     logoStatus().then((s) => setLogoOn(!!s.configured)).catch(() => {});
     listFonts().then(({ fonts: f }) => setFonts(Array.isArray(f) ? f : [])).catch(() => {});
@@ -196,21 +201,55 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
 
   const saveZernioCfg = async () => {
     try {
-      const payload = { accounts: accts, timezone: zTz.trim() || 'Europe/Rome' };
-      if (zKey.trim()) payload.api_key = zKey.trim();
-      const z = await saveZernio(payload);
-      setZernioState(z); setZKey('');
+      const z = await saveZernio({ profiles });
+      setZernioState(z);
+      setProfiles(((z.profiles || []).map((p) => ({ ...p, api_key: '' }))));
       pushToast?.('success', 'Zernio saved');
     } catch { pushToast?.('error', 'Zernio save failed'); }
   };
 
-  const discover = async () => {
+  const patchProfile = (i, patch) => setProfiles((ps) => ps.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+
+  const patchAccount = (i, key, value) => setProfiles((ps) => ps.map((p, idx) => (
+    idx === i ? { ...p, accounts: { ...(p.accounts || {}), [key]: value } } : p
+  )));
+
+  const setDefault = (i) => setProfiles((ps) => ps.map((p, idx) => ({ ...p, is_default: idx === i })));
+
+  const addProfile = () => {
+    setProfiles((ps) => [...ps, {
+      id: '', name: '', api_key: '', is_default: ps.length === 0,
+      accounts: { tiktok: '', instagram: '', youtube: '' },
+      timezone: zernio?.timezone || 'Europe/Rome',
+    }]);
+  };
+
+  const removeProfile = (i) => {
+    setProfiles((ps) => {
+      const removedDefault = ps[i]?.is_default;
+      const next = ps.filter((_, idx) => idx !== i);
+      if (removedDefault && next.length && !next.some((p) => p.is_default)) {
+        next[0] = { ...next[0], is_default: true };
+      }
+      return next;
+    });
+  };
+
+  const discover = async (profile) => {
+    if (!(profile.api_key || profile.api_key_masked)) {
+      pushToast?.('warn', 'Add an API key to this profile first');
+      return;
+    }
+    const key = profile.id || profile.name;
+    setDiscovering(key);
     try {
-      // Discovery runs against the *saved* key, so persist a freshly-typed one
-      // first — otherwise the backend 400s with "API key not configured".
-      if (zKey.trim()) { await saveZernio({ api_key: zKey.trim(), accounts: accts }); setZKey(''); }
-      const { accounts } = await discoverZernioAccounts();
-      const next = { ...accts };
+      // Discovery runs against the *saved* key, so persist first — otherwise
+      // the backend 400s with "API key not configured". Persisting also gives
+      // brand-new profiles a stable id to query against.
+      const z = await saveZernio({ profiles });
+      const saved = (z.profiles || []).find((p) => p.name === profile.name);
+      const { accounts } = await discoverZernioAccounts(saved?.id || profile.id);
+      const next = { tiktok: '', instagram: '', youtube: '' };
       (accounts || []).forEach((a) => {
         const p = (a.platform || '').toLowerCase();
         const id = a._id || a.id;
@@ -218,9 +257,14 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
         else if (p.includes('insta')) next.instagram = id;
         else if (p.includes('you')) next.youtube = id;
       });
-      setAccts(next);
+      setZernioState(z);
+      setProfiles((z.profiles || []).map((p) => ({
+        ...p, api_key: '',
+        accounts: p.name === profile.name ? { ...(p.accounts || {}), ...next } : p.accounts,
+      })));
       pushToast?.('success', `Discovered ${(accounts || []).length} accounts`);
     } catch { pushToast?.('error', 'Discover failed. Check the API key.'); }
+    finally { setDiscovering(null); }
   };
 
   const onCookieFile = async (e) => {
@@ -364,35 +408,53 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
             <div className="zico"><Icon n="rss" /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="kt">Zernio</div>
-              <div className="kd">{zernio?.configured ? `Connected${zernio.api_key_masked ? ' · ' + zernio.api_key_masked : ''}` : 'Add your API key + account IDs to schedule posts'}</div>
+              <div className="kd">{profiles.length
+                ? `${profiles.length} profile${profiles.length > 1 ? 's' : ''} · the default one is what "Publish" uses`
+                : 'Add a named profile (API key + account IDs) per account to schedule posts'}</div>
             </div>
             {zernio?.configured && <span className="conn"><Icon n="circle-check" />Connected</span>}
           </div>
-          <input className="key-input" style={{ width: '100%' }} type="password" value={zKey}
-            aria-label="Zernio API key"
-            placeholder={zernio?.configured ? 'Replace API key (optional)' : 'Zernio API key (sk_…)'} onChange={(e) => setZKey(e.target.value)} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-            {['tiktok', 'instagram', 'youtube'].map((p) => (
-              <input key={p} className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
-                aria-label={`${p} account id`}
-                value={accts[p] || ''} placeholder={`${p} account id`} onChange={(e) => setAccts((a) => ({ ...a, [p]: e.target.value }))} />
-            ))}
-          </div>
-          <div className="opt" style={{ padding: 0, border: 0 }}>
-            <div className="oico"><Icon n="globe" /></div>
-            <div className="otxt"><div className="ot">Schedule timezone</div><div className="od">Prime-time slots (SmartScheduler) are computed in this zone</div></div>
-            <div className="r">
-              <select className="key-input" style={{ width: 'auto', maxWidth: 180, fontFamily: 'var(--font-sans)' }}
-                aria-label="Schedule timezone"
-                value={zTz}
-                onChange={(e) => setZTz(e.target.value)}>
-                {zTz && !TIMEZONES.includes(zTz) && <option value={zTz}>{zTz}</option>}
-                {TIMEZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
-              </select>
+
+          {profiles.map((p, i) => (
+            <div key={p.id || p.name || `new-${i}`} className="zernio-profile"
+              style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--r-md)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input className="key-input" style={{ flex: 1, fontFamily: 'var(--font-sans)' }}
+                  aria-label={`Profile ${i + 1} name`} placeholder="Profile name (e.g. Client A)"
+                  value={p.name || ''} onChange={(e) => patchProfile(i, { name: e.target.value })} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', color: 'var(--fg-2)', fontSize: 13, cursor: 'pointer' }}>
+                  <input type="radio" name="zernio-default" checked={!!p.is_default}
+                    aria-label={`Make ${p.name || 'profile'} the default`}
+                    onChange={() => setDefault(i)} />
+                  Default
+                </label>
+                <button type="button" className="mini" aria-label={`Delete ${p.name || 'profile'}`} title="Delete profile"
+                  onClick={() => removeProfile(i)}><Icon n="x" /></button>
+              </div>
+              <input className="key-input" style={{ width: '100%' }} type="password"
+                aria-label={`${p.name || 'profile'} API key`}
+                placeholder={p.api_key_masked ? `Replace key (${p.api_key_masked})` : 'Zernio API key (sk_…)'}
+                value={p.api_key || ''} onChange={(e) => patchProfile(i, { api_key: e.target.value })} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                {['tiktok', 'instagram', 'youtube'].map((pp) => (
+                  <input key={pp} className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                    aria-label={`${p.name || 'profile'} ${pp} account id`}
+                    value={p.accounts?.[pp] || ''} placeholder={`${pp} account id`}
+                    onChange={(e) => patchAccount(i, pp, e.target.value)} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn variant="ghost" size="sm" icon="rss" disabled={discovering === (p.id || p.name)}
+                  onClick={() => discover(p)}>
+                  {discovering === (p.id || p.name) ? 'Discovering…' : 'Discover'}
+                </Btn>
+              </div>
             </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Btn variant="secondary" size="sm" icon="rss" onClick={discover}>Discover from Zernio</Btn>
+          ))}
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn variant="ghost" size="sm" icon="plus" onClick={addProfile}>Add profile</Btn>
+            <div style={{ flex: 1 }} />
             <Btn variant="primary" size="sm" icon="check" onClick={saveZernioCfg}>Save</Btn>
           </div>
         </div>
