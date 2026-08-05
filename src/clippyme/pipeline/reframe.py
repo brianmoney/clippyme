@@ -24,13 +24,14 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from clippyme.domain.encode import x264_video_args
+from clippyme.domain.encode import ffmpeg_timeout, x264_video_args
 from clippyme.pipeline.media_probe import (
     audio_sync_seek_args,
     probe_is_variable_frame_rate,
     probe_stream_start_time,
     reconcile_fps,
 )
+from clippyme.pipeline.run_ops import build_vfr_normalization_command
 from clippyme.pipeline.reframe_ops import (
     PanSmoother,
     build_smoothed_trajectory,
@@ -856,13 +857,15 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
     # fallback / standalone --reframe-only on a raw download pays the extra pass.
     if probe_is_variable_frame_rate(input_video):
         print("   ⚠️ Variable frame rate detected — normalizing to constant frame rate first...")
-        cfr_cmd = [
-            'ffmpeg', '-y', '-i', input_video,
-            '-vsync', 'cfr', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
-            '-c:a', 'copy', temp_cfr_input,
-        ]
+        cfr_cmd = build_vfr_normalization_command(input_video, temp_cfr_input)
         try:
-            subprocess.run(cfr_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)
+            subprocess.run(
+                cfr_cmd,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=ffmpeg_timeout(),
+            )
             input_video = temp_cfr_input
             print("   ✅ VFR normalization complete.")
         except subprocess.CalledProcessError:
