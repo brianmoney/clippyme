@@ -95,11 +95,35 @@ def test_smartcut_afade_segments_render(clip, tmp_path):
     from clippyme.domain.smartcut import _render_with_ffmpeg
 
     out = str(tmp_path / "cut.mp4")
-    # Two kept segments → one internal concat boundary that must fade, not pop.
+    # Two kept segments → one internal join. Default renderer crossfades the
+    # join (xfade + acrossfade); must produce a valid playable file.
     ok = _render_with_ffmpeg(clip, [(0.0, 0.8), (1.2, 2.0)], out)
     assert ok is True
     assert os.path.getsize(out) > 0
-    assert "audio" in _streams(out)
+    s = _streams(out)
+    assert "video" in s and "audio" in s
+
+
+def test_smartcut_hard_concat_still_renders_when_crossfade_disabled(clip, tmp_path, monkeypatch):
+    from clippyme.domain import smartcut as sm
+
+    monkeypatch.setattr(sm, "SMARTCUT_CROSSFADE", 0.0)
+    out = str(tmp_path / "cut_hard.mp4")
+    ok = sm._render_with_ffmpeg(clip, [(0.0, 0.8), (1.2, 2.0)], out)
+    assert ok is True
+    assert os.path.getsize(out) > 0
+    assert "video" in _streams(out)
+
+
+def test_smartcut_multi_segment_crossfade_renders(clip, tmp_path):
+    from clippyme.domain.smartcut import _render_with_ffmpeg
+
+    out = str(tmp_path / "cut3.mp4")
+    ok = _render_with_ffmpeg(clip, [(0.0, 0.6), (0.8, 1.4), (1.6, 2.0)], out)
+    assert ok is True
+    assert os.path.getsize(out) > 0
+    s = _streams(out)
+    assert "video" in s and "audio" in s
 
 
 def _make_logo_png(path):

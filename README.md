@@ -171,6 +171,7 @@ Runtime env overrides (rarely needed):
 | `CLIPPYME_X264_PRESET` | `medium` | Shared libx264 preset; a faster preset (e.g. `fast`) trades a little quality/size for render speed. |
 | `ZERNIO_DEFAULT_TZ` | `Europe/Rome` | |
 | `ZERNIO_MIN_GAP_SECONDS` | `5400` | SmartScheduler min spacing between posts. |
+| `AE_CROSSFADE` | `0.15` | Smart Cut ffmpeg renderer: crossfade (seconds) between consecutive kept segments so pause-removal cuts blend instead of hard-cutting. `0` = hard cuts. |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | _(unset)_ | Helix app creds ([dev.twitch.tv](https://dev.twitch.tv/console/apps)) for the Twitch content monitor. Also settable in Settings. Fallback only if not stored in `data/config.json`. |
 | `MAX_FILE_SIZE_MB` | `16384` | Max local-video upload size in MB (16 GB default — long stream VODs easily exceed the old 2 GB). Raising past 16 GB behind the prod nginx frontend also requires raising `client_max_body_size` in `dashboard/nginx.conf`. |
 | `REFRAME_SMOOTHER` | _(blank)_ | `euro` switches the speaker camera to the 1€ adaptive filter; blank keeps the two-speed EMA. |
@@ -298,7 +299,7 @@ Static mounts: `/videos`, `/thumbnails`, `/fonts` (read-only).
 Every finished clip has an **Edit & reprocess** panel, one button on the clip card opens a **tabbed modal** (Reframe · Grade · Captions · Hook · Smart Cut · Trim · Logo) that gathers all the options in one place so you set everything first and apply once, instead of the clip reprocessing on every tweak. The compose layers:
 
 - **Colour grade**: one of four ffmpeg presets (warm_cinematic / cool_crisp / neutral_punch / vivid_pop). Runs first so the overlays below keep their authored colours.
-- **Smart Cut**: auto-removes silences and filler words via auto-editor v3 timeline; falls back to ffmpeg concat demuxer if the binary is missing.
+- **Smart Cut**: auto-removes silences and filler words via auto-editor v3 timeline; falls back to ffmpeg (concat demuxer or a short per-cut crossfade) if the binary is missing.
 - **Trim** (its own tab): shows the clip's transcript as a tap-to-cut checklist for hand-removing specific lines, kept separate from the automatic pass. A plain-English **AI trim** box turns an instruction like "cut the intro" into the same spans. The picked spans (`drop_ranges`) ride through download and publish; dropping a line implies the Smart Cut compose stage.
 - **Hook**: text overlay, auto-prefilled from the Gemini hook suggestion. Beyond position/size it offers **Instagram-Stories-style text styling**: a toggleable coloured banner behind the text (colour + opacity), independent text colour, an outline/stroke (None/Thin/Thick + colour), and a font choice. The default look is bannerless white **Anton** with a thin black outline. A live WYSIWYG preview sits above the controls. Supports emoji.
 - **Subtitles**: 6 viral karaoke presets (`classic_white`, `hormozi_bold`, `neon_glow`, `mrbeast_box`, `minimal_clean`, `fire_impact`) or classic SRT with font/color/position controls. The Create-tab grid (`dashboard/src/redesign/data.js`) is a cosmetic CSS preview (system fonts; highlight colours match the backend), not pixel-faithful.
