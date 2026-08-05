@@ -64,9 +64,9 @@ from clippyme.api.security import (
     require_trusted_config_request,
 )
 from clippyme.storage.config_store import (
+    get_zernio_profile,
     load_persistent_config,
     save_persistent_config,
-    load_zernio_config,
 )
 from clippyme.domain.job_worker import make_workers
 from clippyme.domain.history_service import scan_history, is_valid_job_id
@@ -897,10 +897,13 @@ async def publish_clip_endpoint(job_id: str, clip_index: int, req: PublishReques
     resolved = await asyncio.to_thread(
         resolve_clip, job_id, clip_index, OUTPUT_DIR, require_file=False)
 
-    zernio_cfg = await asyncio.to_thread(load_zernio_config)
+    # Resolve the Zernio profile to publish as: the profile the caller selected
+    # (req.profile_id) or the configured default. The frontend shows this
+    # account for confirmation before it submits the publish.
+    profile = await asyncio.to_thread(get_zernio_profile, req.profile_id)
     return await publish_clip_flow(
         job_id=job_id, clip_index=clip_index, resolved=resolved,
-        req=req.model_dump(), zernio_cfg=zernio_cfg,
+        req=req.model_dump(), profile=profile,
     )
 
 

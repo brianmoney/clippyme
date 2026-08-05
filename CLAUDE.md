@@ -188,7 +188,12 @@ The auto-editor binary is NOT a pip dep — Dockerfile downloads it; an opt-in
 **Publish**: Zernio (TikTok/Instagram/YouTube). `publish_service.publish_clip_flow`
 optionally re-composes first so uploads match the preview; `SmartScheduler`
 picks Italian-prime-time slots with anti-collision. Zernio error bodies pass
-through verbatim (the frontend parses per-platform 429 daily limits).
+through verbatim (the frontend parses per-platform 429 daily limits). Zernio
+config supports multiple named **profiles** (each its own API key + per-platform
+account IDs); `PublishRequest.profile_id` selects which account to publish to
+(defaults to the marked `default` profile) and the publish modal shows the
+resolved account for confirmation. The live monitor auto-publishes to the
+default profile.
 
 ## Code rules
 

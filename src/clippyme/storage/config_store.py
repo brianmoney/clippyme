@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 import threading
+import uuid
 
 logger = logging.getLogger("clippyme")
 
@@ -25,6 +26,8 @@ VALID_CONFIG_KEYS = (
     "OPENAI_CAPTIONS_MODEL",
 )
 ZERNIO_CONFIG_NAMESPACE = "zernio"
+ZERNIO_DEFAULT_TIMEZONE = "Europe/Rome"
+ZERNIO_MAX_PROFILES = 16
 _CONFIG_LOCK = threading.RLock()
 
 
@@ -95,56 +98,234 @@ def _write_raw_config(data: dict) -> bool:
                     os.remove(tmp_path)
 
 
+def _normalize_profiles(raw) -> list:
+    """Coerce stored profiles into clean profile dicts (read side).
+
+    Malformed entries are dropped and missing fields filled with defaults.
+    Only used by loaders — writes go through :func:`_validate_profiles_for_save`.
+    """
+    if not isinstance(raw, list):
+        return []
+    profiles = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        profile = {
+            "id": str(entry.get("id") or ""),
+            "name": str(entry.get("name") or ""),
+            "api_key": str(entry.get("api_key") or ""),
+            "is_default": bool(entry.get("is_default")),
+            "accounts": entry.get("accounts") if isinstance(entry.get("accounts"), dict) else {},
+            "timezone": entry.get("timezone") or ZERNIO_DEFAULT_TIMEZONE,
+        }
+        if profile["id"] and profile["name"]:
+            profiles.append(profile)
+    return profiles
+
+
+def _mask_key(api_key: str) -> str:
+    if api_key and len(api_key) > 10:
+        return f"{api_key[:6]}...{api_key[-4:]}"
+    return ""
+
+
 def load_zernio_config() -> dict:
+    """Load the Zernio namespace, exposing both profiles and legacy fields.
+
+    Returned keys:
+      - ``profiles``: list of ``{id, name, api_key, is_default, accounts, timezone}``
+      - ``default_profile``: the profile to publish to (first ``is_default``,
+        else the first profile, else ``None``)
+      - ``api_key`` / ``accounts`` / ``timezone``: derived from the default
+        profile so legacy consumers (live-monitor auto-publish, publish flow)
+        keep working unchanged. A pre-profiles layout (top-level api_key only)
+        is surfaced as a single synthesized "default" profile.
+    """
     raw = _read_raw_config()
     zernio = raw.get(ZERNIO_CONFIG_NAMESPACE) or {}
     if not isinstance(zernio, dict):
         zernio = {}
     accounts = zernio.get("accounts", {})
-    return {
+    legacy = {
         "api_key": zernio.get("api_key", ""),
         "accounts": accounts if isinstance(accounts, dict) else {},
-        "timezone": zernio.get("timezone", "Europe/Rome"),
+        "timezone": zernio.get("timezone", ZERNIO_DEFAULT_TIMEZONE),
+    }
+    profiles = _normalize_profiles(zernio.get("profiles"))
+    if not profiles and legacy["api_key"]:
+        # Back-compat with the pre-profiles layout: expose the stored key as a
+        # single default profile so every consumer treats config as a list.
+        profiles = [{
+            "id": "default",
+            "name": "Default",
+            "api_key": legacy["api_key"],
+            "is_default": True,
+            "accounts": legacy["accounts"],
+            "timezone": legacy["timezone"],
+        }]
+    default_profile = next(
+        (p for p in profiles if p.get("is_default")),
+        profiles[0] if profiles else None,
+    )
+    return {
+        "profiles": profiles,
+        "default_profile": default_profile,
+        "api_key": (default_profile or {}).get("api_key") or legacy["api_key"],
+        "accounts": (default_profile or {}).get("accounts") or legacy["accounts"],
+        "timezone": (default_profile or {}).get("timezone") or legacy["timezone"],
     }
 
 
-def save_zernio_config(api_key: str = None, accounts: dict = None, timezone: str = None) -> bool:
-    """Merge-update Zernio settings as one locked read-modify-write."""
+def get_zernio_profile(profile_id: str = None) -> dict:
+    """Resolve a stored Zernio profile by id, falling back to the default."""
+    cfg = load_zernio_config()
+    profiles = cfg.get("profiles") or []
+    if profile_id:
+        for profile in profiles:
+            if profile.get("id") == profile_id:
+                return profile
+    return cfg.get("default_profile")
+
+
+def _validate_profiles_for_save(profiles, existing_by_id: dict):
+    """Validate + normalise an incoming profile list. ``None`` on invalid input.
+
+    Profiles that come back with a blank ``api_key`` inherit the stored key of
+    the same ``id`` (the editor sends masked/blank keys for existing profiles).
+    Enforces unique ids/names and at most one ``is_default``.
+    """
+    if not isinstance(profiles, list):
+        return None
+    if len(profiles) > ZERNIO_MAX_PROFILES:
+        return None
+    cleaned = []
+    seen_ids = set()
+    seen_names = set()
+    default_seen = False
+    for entry in profiles:
+        if not isinstance(entry, dict):
+            return None
+        pid = str(entry.get("id") or "").strip()
+        name = str(entry.get("name") or "").strip()
+        api_key = str(entry.get("api_key") or "").strip()
+        if not name or len(name) > 80:
+            return None
+        if len(api_key) > 512:
+            return None
+        if not pid:
+            pid = f"p{uuid.uuid4().hex[:12]}"
+        if pid in seen_ids:
+            return None
+        seen_ids.add(pid)
+        if name in seen_names:
+            return None
+        seen_names.add(name)
+        if not api_key:
+            api_key = (existing_by_id.get(pid) or {}).get("api_key", "")
+        accounts = entry.get("accounts")
+        if accounts is not None and not isinstance(accounts, dict):
+            return None
+        is_default = bool(entry.get("is_default"))
+        if is_default and default_seen:
+            return None
+        if is_default:
+            default_seen = True
+        cleaned.append({
+            "id": pid,
+            "name": name,
+            "api_key": api_key,
+            "is_default": is_default,
+            "accounts": accounts if isinstance(accounts, dict) else {},
+            "timezone": entry.get("timezone") or ZERNIO_DEFAULT_TIMEZONE,
+        })
+    return cleaned
+
+
+def save_zernio_config(api_key: str = None, accounts: dict = None, timezone: str = None,
+                       profiles: list = None) -> bool:
+    """Merge-update Zernio settings as one locked read-modify-write.
+
+    When ``profiles`` is given it REPLACES the whole profile list (the dashboard
+    editor owns the list). The legacy top-level ``api_key``/``accounts``/
+    ``timezone`` keys are kept in sync with the default profile for back-compat
+    consumers. Without ``profiles`` the legacy single-key merge is preserved.
+    """
     with _CONFIG_LOCK:
         raw = _read_raw_config()
         current = raw.get(ZERNIO_CONFIG_NAMESPACE) or {}
         if not isinstance(current, dict):
             current = {}
-        if api_key is not None:
-            if api_key == "":
-                current.pop("api_key", None)
+        if profiles is not None:
+            existing = {p["id"]: p for p in _normalize_profiles(current.get("profiles"))}
+            # Legacy layout: the synthesized "default" profile (blank key on
+            # save) must inherit the stored top-level api_key, or a migration
+            # save would silently wipe the user's key.
+            if "default" not in existing and current.get("api_key"):
+                existing["default"] = {
+                    "id": "default",
+                    "name": "Default",
+                    "api_key": current.get("api_key", ""),
+                    "is_default": True,
+                    "accounts": current.get("accounts") if isinstance(current.get("accounts"), dict) else {},
+                    "timezone": current.get("timezone") or ZERNIO_DEFAULT_TIMEZONE,
+                }
+            cleaned = _validate_profiles_for_save(profiles, existing)
+            if cleaned is None:
+                return False
+            if cleaned:
+                default = next((p for p in cleaned if p.get("is_default")), cleaned[0])
+                current["profiles"] = cleaned
+                current["api_key"] = default["api_key"]
+                current["accounts"] = default["accounts"]
+                current["timezone"] = default["timezone"]
             else:
-                current["api_key"] = api_key
-        if accounts is not None:
-            merged = current.get("accounts") or {}
-            if not isinstance(merged, dict):
-                merged = {}
-            for key, value in accounts.items():
-                if value in (None, ""):
-                    merged.pop(key, None)
+                current.pop("profiles", None)
+                current.pop("api_key", None)
+                current.pop("accounts", None)
+                current.pop("timezone", None)
+        else:
+            if api_key is not None:
+                if api_key == "":
+                    current.pop("api_key", None)
                 else:
-                    merged[key] = value
-            current["accounts"] = merged
-        if timezone is not None:
-            current["timezone"] = timezone
+                    current["api_key"] = api_key
+            if accounts is not None:
+                merged = current.get("accounts") or {}
+                if not isinstance(merged, dict):
+                    merged = {}
+                for key, value in accounts.items():
+                    if value in (None, ""):
+                        merged.pop(key, None)
+                    else:
+                        merged[key] = value
+                current["accounts"] = merged
+            if timezone is not None:
+                current["timezone"] = timezone
         raw[ZERNIO_CONFIG_NAMESPACE] = current
         return _write_raw_config(raw)
 
 
 def zernio_config_status() -> dict:
     cfg = load_zernio_config()
-    api_key = cfg.get("api_key", "")
-    masked = f"{api_key[:6]}...{api_key[-4:]}" if api_key and len(api_key) > 10 else ""
+    default = cfg.get("default_profile")
+    profiles = []
+    for profile in cfg.get("profiles") or []:
+        profiles.append({
+            "id": profile.get("id"),
+            "name": profile.get("name"),
+            "api_key_masked": _mask_key(profile.get("api_key", "")),
+            "is_default": bool(profile.get("is_default")),
+            "accounts": profile.get("accounts", {}),
+            "timezone": profile.get("timezone", ZERNIO_DEFAULT_TIMEZONE),
+        })
+    default_key = (default or {}).get("api_key", "")
     return {
-        "configured": bool(api_key),
-        "api_key_masked": masked,
-        "accounts": cfg.get("accounts", {}),
-        "timezone": cfg.get("timezone", "Europe/Rome"),
+        "configured": bool(default_key),
+        "default_profile_id": (default or {}).get("id"),
+        "profiles": profiles,
+        "api_key_masked": _mask_key(default_key),
+        "accounts": (default or {}).get("accounts", {}),
+        "timezone": (default or {}).get("timezone", ZERNIO_DEFAULT_TIMEZONE),
     }
 
 

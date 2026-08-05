@@ -7,11 +7,21 @@ import { PublishModal } from './publish.jsx';
 import { localDatePlus } from '../lib/scheduleDates';
 import * as realApi from './realApi';
 
-vi.mock('./realApi', () => ({
-  getZernio: vi.fn(async () => ({
-    configured: true,
+const zernioShape = ({ tz = 'Europe/Rome' } = {}) => ({
+  configured: true,
+  default_profile_id: 'p1',
+  profiles: [{
+    id: 'p1', name: 'Default', api_key_masked: 'sk_ab...cd', is_default: true,
     accounts: { tiktok: 'tt-1', instagram: 'ig-1', youtube: '' },
-  })),
+    timezone: tz,
+  }],
+  api_key_masked: 'sk_ab...cd',
+  accounts: { tiktok: 'tt-1', instagram: 'ig-1', youtube: '' },
+  timezone: tz,
+});
+
+vi.mock('./realApi', () => ({
+  getZernio: vi.fn(async () => zernioShape()),
   publishClip: vi.fn(async () => ({ success: true })),
   clipVideoSrc: (clip) => clip.video_url || '/videos/x.mp4',
   clipPreviewSrc: (clip) => clip.video_url || '/videos/x.mp4',
@@ -31,11 +41,7 @@ const clip = (i, over = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  realApi.getZernio.mockResolvedValue({
-    configured: true,
-    accounts: { tiktok: 'tt-1', instagram: 'ig-1', youtube: '' },
-    timezone: 'Europe/Rome',
-  });
+  realApi.getZernio.mockResolvedValue(zernioShape());
 });
 
 test('batch publish sends a distinct caption per clip', async () => {
@@ -76,11 +82,7 @@ test('single clip falls back to the clip title when nothing was authored', async
 });
 
 test('schedule batch spreads perDay clips per day and sends the chosen timezone', async () => {
-  realApi.getZernio.mockResolvedValue({
-    configured: true,
-    accounts: { tiktok: 'tt-1', instagram: 'ig-1', youtube: '' },
-    timezone: 'America/New_York',
-  });
+  realApi.getZernio.mockResolvedValue(zernioShape({ tz: 'America/New_York' }));
   const clips = [clip(0), clip(1), clip(2), clip(3)];
   render(
     <PublishModal clips={clips} jobId="job-1" clipStates={{}} onClose={vi.fn()} onPublished={vi.fn()} pushToast={vi.fn()} />,

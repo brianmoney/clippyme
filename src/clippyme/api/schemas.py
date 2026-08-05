@@ -82,6 +82,26 @@ def _validate_timezone(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _validate_zernio_accounts(value):
+    if value is None:
+        return value
+    if not isinstance(value, dict):
+        raise ValueError("accounts must be an object")
+    if len(value) > 16:
+        raise ValueError("too many account entries")
+    allowed = {"tiktok", "instagram", "youtube"}
+    for platform, account_id in value.items():
+        if platform not in allowed:
+            raise ValueError(f"unknown account platform: {platform!r}")
+        if account_id is not None and (
+            not isinstance(account_id, str) or len(account_id) > 256
+        ):
+            raise ValueError(
+                f"account id for {platform!r} must be a string <= 256 chars"
+            )
+    return value
+
+
 class ProcessRequest(BaseModel):
     url: str = Field(..., max_length=2048)
     instructions: Optional[str] = Field(None, max_length=MAX_INSTRUCTIONS_LEN)
@@ -343,6 +363,7 @@ class PublishRequest(BaseModel):
     scheduled_for: Optional[str] = Field(None, max_length=64)
     start_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     timezone: str = Field("Europe/Rome", max_length=64)
+    profile_id: Optional[str] = Field(None, max_length=64)
     tiktok_settings: Optional[dict] = None
     compose_first: bool = False
     toggles: Optional[dict] = None
@@ -471,8 +492,11 @@ class LiveMonitorStartRequest(BaseModel):
         return validate_publish_platforms(value)
 
 
-class ZernioConfigRequest(BaseModel):
+class ZernioProfileRequest(BaseModel):
+    id: Optional[str] = Field(None, max_length=64)
+    name: str = Field(..., min_length=1, max_length=80)
     api_key: Optional[str] = Field(None, max_length=512)
+    is_default: bool = False
     accounts: Optional[dict] = None
     timezone: Optional[str] = Field(None, max_length=64)
 
@@ -484,20 +508,30 @@ class ZernioConfigRequest(BaseModel):
     @field_validator("accounts")
     @classmethod
     def _validate_accounts(cls, value):
+        return _validate_zernio_accounts(value)
+
+
+class ZernioConfigRequest(BaseModel):
+    api_key: Optional[str] = Field(None, max_length=512)
+    accounts: Optional[dict] = None
+    timezone: Optional[str] = Field(None, max_length=64)
+    profiles: Optional[List[ZernioProfileRequest]] = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_tz(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_timezone(value)
+
+    @field_validator("accounts")
+    @classmethod
+    def _validate_accounts(cls, value):
+        return _validate_zernio_accounts(value)
+
+    @field_validator("profiles")
+    @classmethod
+    def _bound_profiles(cls, value: Optional[List[ZernioProfileRequest]]):
         if value is None:
             return value
-        if not isinstance(value, dict):
-            raise ValueError("accounts must be an object")
         if len(value) > 16:
-            raise ValueError("too many account entries")
-        allowed = {"tiktok", "instagram", "youtube"}
-        for platform, account_id in value.items():
-            if platform not in allowed:
-                raise ValueError(f"unknown account platform: {platform!r}")
-            if account_id is not None and (
-                not isinstance(account_id, str) or len(account_id) > 256
-            ):
-                raise ValueError(
-                    f"account id for {platform!r} must be a string <= 256 chars"
-                )
+            raise ValueError("too many Zernio profiles")
         return value
