@@ -14,7 +14,7 @@ import { PublishModal } from './publish';
 import { HistoryView, SettingsView, ApiKeyModal } from './views';
 import { LiveMonitorView } from './live';
 import { EditClipModal } from './captions';
-import { optsToPreselections, restoreJob, listBackendJobIds, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip } from './realApi';
+import { optsToPreselections, restoreJob, listBackendJobIds, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip } from './realApi';
 import { allPresets, getDefaultPresetOpts, getDefaultPresetId, saveUserPreset, deleteUserPreset, setDefaultPreset } from './presets';
 import { HOOK_STYLE_DEFAULT } from './data';
 import { clipStateToParams, buildBulkPlan } from '../lib/bulkApply';
@@ -120,7 +120,7 @@ export default function RedesignApp() {
   // reality so jobs wiped by a rebuild are flagged instead of dead-clicking.
   const [availableJobIds, setAvailableJobIds] = useState(null);
 
-  const { history, saveToHistory, deleteFromHistory, clearHistory } = useHistory();
+  const { history, saveToHistory, deleteFromHistory } = useHistory();
   const { cookiesConfigured, setCookiesConfigured } = useBackendStatus();
   const { states: clipStates, updateClip: updateClipState } = useClipStates(jobId);
 
@@ -199,6 +199,44 @@ export default function RedesignApp() {
     setPresetsVersion((v) => v + 1);
     if (defaultPresetId === id) setDefaultPresetId(null);
     pushToast('info', 'Preset deleted');
+  };
+
+  // History delete is two-phase: the backend must actually remove the job's
+  // files from disk, THEN we drop the localStorage entry. Deleting only the
+  // list entry orphaned the files (the old behaviour). A 404 means the files
+  // were already wiped by cleanup — still dismiss the stale entry. A 409 means
+  // the job is still processing; keep the entry and surface why.
+  const onDeleteHistoryJob = async (id) => {
+    try {
+      await deleteHistoryJob(id);
+      deleteFromHistory(id);
+      pushToast('info', 'Job deleted');
+    } catch (e) {
+      if (e?.status === 404) { deleteFromHistory(id); pushToast('info', 'Job deleted (files were already gone)'); }
+      else if (e?.status === 409) pushToast('error', 'Job is still processing — stop or cancel it first');
+      else pushToast('error', 'Delete failed — could not remove the files');
+      return;
+    }
+    listBackendJobIds().then(setAvailableJobIds);
+  };
+
+  const onClearHistory = async () => {
+    const jobs = [...history];
+    let removed = 0;
+    for (const h of jobs) {
+      try {
+        await deleteHistoryJob(h.jobId);
+        deleteFromHistory(h.jobId);
+        removed += 1;
+      } catch (e) {
+        if (e?.status === 404) { deleteFromHistory(h.jobId); removed += 1; }
+        // 409 / network errors: keep the entry, files stay on disk.
+      }
+    }
+    if (removed === jobs.length) pushToast('info', 'History cleared');
+    else if (removed === 0) pushToast('error', 'Could not delete jobs — is the backend up?');
+    else pushToast('warn', `Deleted ${removed}/${jobs.length} jobs — the rest are still processing`);
+    listBackendJobIds().then(setAvailableJobIds);
   };
 
   useJobPolling({
@@ -423,8 +461,8 @@ export default function RedesignApp() {
       {tab === 'history' && !viewingHistory && (
         <HistoryView history={history} availableIds={availableJobIds}
           onOpen={openHistoryJob}
-          onDelete={(id) => { deleteFromHistory(id); pushToast('info', 'Job deleted'); }}
-          onClear={() => { clearHistory(); pushToast('info', 'History cleared'); }} />
+          onDelete={onDeleteHistoryJob}
+          onClear={onClearHistory} />
       )}
       {tab === 'history' && viewingHistory && (
         <div className="fade-in">
