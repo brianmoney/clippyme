@@ -185,6 +185,17 @@ export async function restoreJob(jobId) {
   return res.json(); // { result: { clips, cost_analysis } }
 }
 
+// Permanently delete a job's output directory + uploaded source from disk.
+// The History delete button MUST call this (and only dismiss the localStorage
+// entry on success/404) — removing just the list entry orphaned the files.
+// Callers distinguish: 200 deleted, 404 already gone (files wiped by cleanup),
+// 409 active job (must be stopped/cancelled first).
+export async function deleteHistoryJob(jobId) {
+  const res = await apiFetch(getApiUrl(`/api/history/${jobId}`), { method: 'DELETE' });
+  if (!res.ok) { const e = new Error(`HTTP ${res.status}`); e.status = res.status; throw e; }
+  return res.json();
+}
+
 // Jobs that actually exist on disk right now. The History list is driven by
 // localStorage (survives rebuilds), but the clip files live in output/ — a
 // docker rebuild/cleanup can wipe them while the localStorage entry lingers.
