@@ -19,8 +19,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger("clippyme")
+
+# One HTTP round-trip per clip, run concurrently so a 12-clip batch takes as
+# long as the slowest clip instead of the sum of all of them (a fully
+# sequential batch was routinely taking 1-2 minutes and reading as "hung" in
+# the UI). Bounded well under typical provider per-key rate limits.
+MAX_WORKERS = 6
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -242,12 +249,31 @@ def _chat_completion(base_url: str, api_key: str, model: str,
     return content
 
 
+def _caption_one(clip: dict, base_url: str, api_key: str, model: str,
+                 timeout: float) -> dict:
+    messages = build_caption_messages(
+        context=clip.get("context", ""),
+        clip_title=clip.get("title"),
+        segments=clip.get("segments") or [],
+        clip_duration=float(clip.get("duration") or 0),
+    )
+    text = _chat_completion(base_url, api_key, model, messages, timeout=timeout)
+    caption = parse_caption_response(text)
+    logger.info("caption_ai: clip=%s caption_chars=%d",
+                clip.get("index"), len(caption))
+    return {"index": clip.get("index"), "caption": caption}
+
+
 def optimize_captions(*, base_url: str, api_key: str, model: str,
                       clips: list[dict], timeout: float = 90.0) -> list[dict]:
     """Generate one caption per clip. Returns ``[{"index": i, "caption": str}]``.
 
-    Fail-fast: a provider/auth/rate error fails the whole batch so the user
-    sees the real reason once instead of silently missing captions.
+    Clips are captioned concurrently (bounded by :data:`MAX_WORKERS`) since
+    each call is an independent HTTP round-trip — a sequential loop over a
+    12-clip batch could take minutes. Fail-fast: a provider/auth/rate error
+    fails the whole batch so the user sees the real reason once instead of
+    silently missing captions; in-flight calls are left to finish in the
+    background but their results are discarded.
     """
     if not api_key:
         raise CaptionAIError(
@@ -256,17 +282,15 @@ def optimize_captions(*, base_url: str, api_key: str, model: str,
         )
     if not clips:
         return []
-    results = []
-    for clip in clips:
-        messages = build_caption_messages(
-            context=clip.get("context", ""),
-            clip_title=clip.get("title"),
-            segments=clip.get("segments") or [],
-            clip_duration=float(clip.get("duration") or 0),
-        )
-        text = _chat_completion(base_url, api_key, model, messages, timeout=timeout)
-        caption = parse_caption_response(text)
-        logger.info("caption_ai: clip=%s caption_chars=%d",
-                    clip.get("index"), len(caption))
-        results.append({"index": clip.get("index"), "caption": caption})
+    results: list[dict] = [None] * len(clips)
+    pool = ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(clips)))
+    try:
+        futures = {
+            pool.submit(_caption_one, clip, base_url, api_key, model, timeout): i
+            for i, clip in enumerate(clips)
+        }
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     return results

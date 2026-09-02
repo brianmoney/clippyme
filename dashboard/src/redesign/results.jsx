@@ -1,5 +1,5 @@
 
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon, Btn, Badge } from './primitives';
 import { LazyVideo } from './LazyVideo';
 import { AiCaptionPanel } from './aiCaptions';
@@ -19,6 +19,7 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
   const [txErr, setTxErr] = useState(false);
   const [copied, setCopied] = useState(false);
   const transcriptText = useMemo(() => (transcript?.segments || []).map((s) => s.text).filter(Boolean).join(' ').trim(), [transcript]);
+  const hasCaption = !!(state?.caption || clip.tiktok_caption);
   const selected = state?.selected !== false;
   const score = Math.round(clip.viral_score || 0);
   const mode = state?.reframeMode || clip.reframe_mode || 'auto';
@@ -110,6 +111,15 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
     setShowCaption(true);
   };
 
+  // The AI-captions batch (aiCaptions.jsx) writes state.caption straight into
+  // clipStates without going through this card's own onChange, so if the
+  // panel is left open across a regenerate the draft needs to pick up the
+  // new text instead of silently keeping the stale one on screen.
+  useEffect(() => {
+    if (showCaption) setCaptionDraft(state?.caption ?? clip.tiktok_caption ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.caption]);
+
   return (
     <article {...selectionProps} className={`clip${score >= 90 ? ' top' : ''}${selectMode && selected ? ' sel' : ''}`}>
       <div className="clip-media" style={{ padding: 0, background: '#000' }}>
@@ -138,8 +148,9 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
         {!selectMode && <>
         <button type="button" className="mini" title="Show / hide this clip's transcript" aria-label="Toggle transcript"
           aria-expanded={showTranscript} onClick={toggleTranscript}><Icon n="captions" /></button>
-        <button type="button" className="mini" title="Edit this clip's publish caption" aria-label="Toggle caption"
-          aria-expanded={showCaption} onClick={toggleCaption}><Icon n="type" /></button>
+        <button type="button" className={`mini${hasCaption ? ' has-caption' : ''}`}
+          title={hasCaption ? "Edit this clip's publish caption (caption set)" : "Edit this clip's publish caption"}
+          aria-label="Toggle caption" aria-expanded={showCaption} onClick={toggleCaption}><Icon n="type" /></button>
         <button type="button" className="mini" title="Apply these settings to all clips" aria-label="Apply settings to all clips" disabled={processing}
           onClick={(event) => { event.stopPropagation(); if (!processing && window.confirm("Apply this clip's settings to every other clip? Manual trim and per-clip hook text are not copied.")) onApplyToAll(index); }}><Icon n="copy" /></button>
         <button type="button" className="mini" title="Download with edits" aria-label={`Download ${title}`} disabled={downloading || processing} onClick={doDownload}><Icon n={downloading ? 'loader' : 'download'} /></button>

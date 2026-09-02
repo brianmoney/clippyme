@@ -355,6 +355,10 @@ select.sel:focus{outline:0;border-color:var(--brand-blue)}
 .mini{width:32px;height:32px;padding:0;font:inherit;border-radius:var(--r-xs);display:flex;align-items:center;justify-content:center;background:var(--bg-3);border:1px solid var(--line-1);color:var(--fg-3);cursor:pointer;flex:none;transition:.12s}
 .mini:hover{color:var(--fg-1);background:var(--bg-4);border-color:var(--line-2)}
 .mini svg{width:14px;height:14px}
+/* Confirms a caption exists without opening the panel — the AI-captions
+   batch writes captions silently, so this is the only in-grid signal it ran. */
+.mini.has-caption{position:relative;color:var(--brand-teal);border-color:rgba(2,197,191,.3)}
+.mini.has-caption::after{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--brand-teal);box-shadow:0 0 0 1.5px var(--bg-3)}
 .clip-pub{position:relative;z-index:3;align-self:flex-start;display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:var(--text-4xs);letter-spacing:.1em;text-transform:uppercase;padding:4px 8px;border-radius:var(--r-pill);background:var(--success-bg);color:var(--brand-teal);border:1px solid rgba(2,197,191,.3)}
 .clip-pub svg{width:11px;height:11px}
 /* Primary per-clip action: opens the staged Edit modal (where reprocessing
