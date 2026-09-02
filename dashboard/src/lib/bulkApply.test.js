@@ -55,11 +55,25 @@ test('buildClipParams hook text falls back through clip then source', () => {
     hookParams: { text: 'SRC' } };
   // No target text anywhere → source text is the last resort.
   assert.equal(buildClipParams(src, {}, {}).hookParams.text, 'SRC');
-  // Saved per-clip edit wins over the Gemini suggestion.
+  // A user-typed per-clip edit (textTouched) wins over the Gemini suggestion.
   assert.equal(
-    buildClipParams(src, { viral_hook_text: 'GEMINI' }, { hookParams: { text: 'EDITED' } }).hookParams.text,
+    buildClipParams(
+      src, { viral_hook_text: 'GEMINI' }, { hookParams: { text: 'EDITED', textTouched: true } },
+    ).hookParams.text,
     'EDITED',
   );
+});
+
+test('buildClipParams prefers the clip\'s own hook over an UNTOUCHED cached one', () => {
+  // A cached hookParams.text with no textTouched flag is just whatever was
+  // auto-seeded the last time this clip was opened/applied — not a real user
+  // edit — so a fresher clip.viral_hook_text (e.g. after a backend fix) wins.
+  const src = { reframeMode: 'auto', toggles: {}, subtitleParams: {}, logoParams: {},
+    hookParams: { text: 'SRC' } };
+  const out = buildClipParams(
+    src, { viral_hook_text: 'FIXED' }, { hookParams: { text: 'STALE' } },
+  );
+  assert.equal(out.hookParams.text, 'FIXED');
 });
 
 test('buildBulkPlan skips the source clip and plans the rest', () => {

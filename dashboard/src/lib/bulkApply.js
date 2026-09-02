@@ -37,14 +37,21 @@ export function clipStateToParams(state, preselections, clip) {
 }
 
 /**
- * The target clip's own hook text (preserved across a bulk apply), falling back
- * to the Gemini suggestion, then to the source text if neither exists.
+ * The target clip's own hook text (preserved across a bulk apply). A cached
+ * state text only wins outright when the user actually typed/rewrote it
+ * (`textTouched`, set by the edit modal) — an untouched cache is just the
+ * backend value from whenever the clip was last opened, and preferring the
+ * clip's OWN current `viral_hook_text` lets a later backend fix (or a fresh
+ * Gemini run) actually show up instead of being shadowed by a stale carry.
+ * Falls back to the Gemini suggestion, then the source text, if nothing else.
  */
 function targetHookText(srcParams, targetClip, targetState) {
+  const cached = targetState?.hookParams;
+  if (cached?.textTouched && cached.text) return cached.text;
   return (
-    targetState?.hookParams?.text ||
     targetClip?.viral_hook_text ||
     targetClip?.hook_text ||
+    cached?.text ||
     srcParams?.hookParams?.text ||
     ''
   );

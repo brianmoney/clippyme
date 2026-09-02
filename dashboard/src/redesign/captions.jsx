@@ -22,6 +22,7 @@ import { HOOK_STYLE_DEFAULT } from './data';
 import { useModalA11y } from './useModalA11y';
 import { clipPreviewSrc } from './realApi';
 import { useManualTrim } from '../hooks/useManualTrim';
+import { useHookRewrite } from '../hooks/useHookRewrite';
 import {
   ReframeTab, SmartCutTab, TrimTab, CaptionsTab, HookTab, LogoTab, GradeTab, BannerTab,
 } from './editTabs';
@@ -42,7 +43,7 @@ function pickHookStyle(src) {
 const canonReframe = (m) => (m === 'object' ? 'subject' : (m || 'auto'));
 
 export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselections, sourceBanner,
-                                bulk = false, targetCount = 0, onClose, onApply }) {
+                                bulk = false, targetCount = 0, apiKey, onClose, onApply }) {
   const t0 = initial?.toggles || {};
   const sp = initial?.subtitleParams || {};
   const pre = preselections || {};
@@ -99,13 +100,25 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
     bg: Number(sp.bg_opacity ?? preSubs.bg_opacity ?? 0) > 0,
   }));
 
+  // Only trust a cached hook text (from a previous Apply) if the user
+  // actually typed/rewrote it themselves (textTouched). Otherwise it was just
+  // the auto-seeded backend value at the time — carrying that forward would
+  // permanently shadow any later fix to the clip's own viral_hook_text (the
+  // exact bug that made a mangled fallback hook survive a backend hotfix and
+  // page reloads: the modal kept reseeding from the stale untouched cache
+  // instead of the freshly corrected clip data).
+  const [hookTouched, setHookTouched] = useState(!!initial?.hookParams?.textTouched);
   const [hookText, setHookText] = useState(
-    initial?.hookParams?.text || clip.viral_hook_text || clip.hook_text || '',
+    (hookTouched ? initial?.hookParams?.text : '') || clip.viral_hook_text || clip.hook_text || '',
   );
+  const onHookText = (value) => { setHookText(value); setHookTouched(true); };
   // IG-Stories hook style: seed from a prior edit, else the pre-selection.
   const [hookStyle, setHookStyle] = useState(
     () => pickHookStyle(initial?.hookParams || (preselections || {}).hook),
   );
+
+  // AI rewrite of the hook text into a target language (per-clip only).
+  const rewrite = useHookRewrite({ jobId, idx: clip.original_index ?? idx, apiKey });
 
   // Manual trim (flycut-style) — transcript load + dropped set + AI trim.
   // Resolve to the backend's ABSOLUTE `shorts` position, not the array
@@ -115,6 +128,7 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
     jobId, idx: clip.original_index ?? idx,
     active: !bulk && tab === 'trim',
     initialDropRanges: initial?.dropRanges,
+    apiKey,
   });
   // Dropped spans for the backend. Never in bulk (per-clip content).
   const dropRanges = bulk ? [] : trim.dropRanges;
@@ -155,7 +169,8 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
             font_color: subs.font_color, outline_color: subs.outline_color }
         : { font: subs.font, font_color: subs.font_color, border_width: subs.border_width,
             bg_opacity: subs.bg ? 0.6 : 0, bg_color: '#000000' }) };
-    const hookParams = { ...seedHookParams(clip, preselections), ...(initial?.hookParams || {}), ...hookStyle, text: hookText };
+    const hookParams = { ...seedHookParams(clip, preselections), ...(initial?.hookParams || {}), ...hookStyle,
+      text: hookText, textTouched: hookTouched };
     const logoParams = { position: logo.position, size: logo.size };
     const gradeParams = { preset: gradePreset };
     const bannerParams = { enabled: bannerOn, platform: banner.platform, handle: banner.handle, y_pct: banner.y_pct };
@@ -210,8 +225,9 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
             )}
             {tab === 'hook' && (
               <HookTab on={hookOn} onToggle={setHookOn} bulk={bulk}
-                text={hookText} onText={setHookText} style={hookStyle}
-                onStyle={(partial) => setHookStyle((s) => ({ ...s, ...partial }))} />
+                text={hookText} onText={onHookText} style={hookStyle}
+                onStyle={(partial) => setHookStyle((s) => ({ ...s, ...partial }))}
+                rewrite={rewrite} />
             )}
             {tab === 'logo' && (
               <LogoTab on={logoOn} onToggle={setLogoOn} logo={logo}

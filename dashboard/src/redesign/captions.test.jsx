@@ -19,6 +19,7 @@ vi.mock('./realApi', () => ({
     language: 'en',
   })),
   editClipAI: vi.fn(),
+  rewriteHookText: vi.fn(async () => ({ hook_text: 'I was doing it all wrong', error: '', language: 'en' })),
   listFonts: vi.fn(async () => ({ fonts: [] })),
 }));
 
@@ -147,6 +148,82 @@ test('dropping a transcript segment forces smartcut and sends its span', async (
   const p = onApply.mock.calls[0][0];
   expect(p.toggles.smartcut).toBe(true);                  // forced despite the switch being off
   expect(p.dropRanges).toEqual([[2.0, 4.0]]);
+});
+
+// --- hook rewrite (AI) ----------------------------------------------------------
+
+test('rewrite with AI fills the hook textarea with the English hook', async () => {
+  const { onApply } = mount({ apiKey: 'AIza-test-key' });
+  const { rewriteHookText } = await import('./realApi');
+  fireEvent.click(tab('Hook'));
+  fireEvent.click(screen.getByRole('switch'));            // hook on
+  const btn = screen.getByRole('button', { name: /Rewrite with AI/ });
+  fireEvent.click(btn);
+  expect(btn).toHaveTextContent('Rewriting…');
+  await screen.findByDisplayValue('I was doing it all wrong');
+  expect(rewriteHookText).toHaveBeenCalledWith('job-1', 0, { language: 'en' }, 'AIza-test-key');
+  expect(screen.getByText(/Hook rewritten in English/)).toBeTruthy();
+  // The staged hook text now rides the compose payload.
+  fireEvent.click(applyBtn());
+  const p = onApply.mock.calls[0][0];
+  expect(p.toggles.hook).toBe(true);
+  expect(p.hookParams.text).toBe('I was doing it all wrong');
+});
+
+test('rewrite AI failure shows the error and keeps the textarea', async () => {
+  const { rewriteHookText } = await import('./realApi');
+  rewriteHookText.mockRejectedValueOnce(new Error('Gemini API key not configured'));
+  const { onApply } = mount();
+  fireEvent.click(tab('Hook'));
+  fireEvent.click(screen.getByRole('switch'));            // hook on
+  fireEvent.click(screen.getByRole('button', { name: /Rewrite with AI/ }));
+  expect(await screen.findByText(/Gemini API key not configured/)).toBeTruthy();
+  expect(screen.getByDisplayValue('THIS changed everything')).toBeTruthy();
+  fireEvent.click(applyBtn());
+  expect(onApply.mock.calls[0][0].hookParams.text).toBe('THIS changed everything');
+});
+
+// --- hook text cache vs fresh clip data ------------------------------------
+
+test('an UNTOUCHED cached hook text is ignored in favor of the clip\'s current viral_hook_text', () => {
+  // Simulates a clip that was Applied once while its viral_hook_text was
+  // still a mangled fallback, then fixed server-side — reopening the modal
+  // must show the corrected text, not the stale cache (the bug reported live).
+  const { onApply } = mount({
+    initial: { hookParams: { text: 'STALE_mangled_title — part 1' } },
+  });
+  fireEvent.click(tab('Hook'));
+  fireEvent.click(screen.getByRole('switch'));            // hook on
+  expect(screen.getByDisplayValue('THIS changed everything')).toBeTruthy();
+  fireEvent.click(applyBtn());
+  expect(onApply.mock.calls[0][0].hookParams.text).toBe('THIS changed everything');
+});
+
+test('a TOUCHED cached hook text (a real user edit) is preserved', () => {
+  const { onApply } = mount({
+    initial: { hookParams: { text: 'My own hand-written hook', textTouched: true } },
+  });
+  fireEvent.click(tab('Hook'));
+  fireEvent.click(screen.getByRole('switch'));            // hook on
+  expect(screen.getByDisplayValue('My own hand-written hook')).toBeTruthy();
+  fireEvent.click(applyBtn());
+  expect(onApply.mock.calls[0][0].hookParams.text).toBe('My own hand-written hook');
+});
+
+test('typing in the hook textarea marks it touched so it survives the next open', () => {
+  const { onApply } = mount();
+  fireEvent.click(tab('Hook'));
+  fireEvent.click(screen.getByRole('switch'));            // hook on
+  const textarea = screen.getByPlaceholderText(/e.g. THIS changed everything/);
+  fireEvent.change(textarea, { target: { value: 'A hand-typed hook' } });
+  fireEvent.click(applyBtn());
+  expect(onApply.mock.calls[0][0].hookParams.textTouched).toBe(true);
+});
+
+test('bulk mode hides the rewrite controls', () => {
+  mount({ bulk: true, targetCount: 3 });
+  fireEvent.click(tab('Hook'));
+  expect(screen.queryByRole('button', { name: /Rewrite with AI/ })).toBeNull();
 });
 
 // --- 7. bulk mode ---------------------------------------------------------------

@@ -151,6 +151,22 @@ export default function RedesignApp() {
   }, [tab, viewingHistory]);
   useSessionPersistence({ status, jobId, results, processingMedia, activeTab: tab, preselections });
 
+  // A bare page reload resumes straight from the localStorage session
+  // snapshot (above) without ever asking the backend — fast, but it means a
+  // completed job's clip data (hook text, captions, ...) can go stale forever
+  // if it changes server-side after the snapshot was taken (a restart, a
+  // manual metadata fix, edits from another tab) and the user never happens
+  // to revisit it via History (which does re-fetch, in openHistoryJob).
+  // Silently reconcile once on mount so a reload can't get stuck showing an
+  // old snapshot; on any failure (offline, job since deleted) just keep
+  // showing what we had.
+  useEffect(() => {
+    if (restoredSession?.status === 'complete' && restoredSession.jobId) {
+      restoreJob(restoredSession.jobId).then((data) => setResults(data.result)).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const dismissToast = useCallback((id) => setToasts((items) => items.filter((item) => item.id !== id)), []);
 
   const pushToast = useCallback((type, msg) => {
@@ -490,7 +506,7 @@ export default function RedesignApp() {
           pushToast={pushToast} />
       )}
       {editClip && (
-        <EditClipModal clip={editClip.clip} idx={editClip.idx} jobId={jobId}
+        <EditClipModal clip={editClip.clip} idx={editClip.idx} jobId={jobId} apiKey={apiKey}
           initial={clipStates[editClip.idx]}
           appliedMode={clipStates[editClip.idx]?.reframeMode || editClip.clip.reframe_mode || 'auto'}
           preselections={preselections} sourceBanner={results?.source_info?.banner}
@@ -498,7 +514,7 @@ export default function RedesignApp() {
           onApply={(params) => { reprocessClip(editClip.idx, editClip.clip, params); setEditClip(null); }} />
       )}
       {bulkEdit && bulkEdit.targets.length > 0 && (
-        <EditClipModal clip={bulkEdit.targets[0].c} idx={bulkEdit.targets[0].i} jobId={jobId}
+        <EditClipModal clip={bulkEdit.targets[0].c} idx={bulkEdit.targets[0].i} jobId={jobId} apiKey={apiKey}
           bulk targetCount={bulkEdit.targets.length}
           initial={clipStates[bulkEdit.targets[0].i]}
           appliedMode={clipStates[bulkEdit.targets[0].i]?.reframeMode || bulkEdit.targets[0].c.reframe_mode || 'auto'}
