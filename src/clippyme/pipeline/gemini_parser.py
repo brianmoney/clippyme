@@ -349,13 +349,18 @@ def backfill_hook_text(
     return clips
 
 
-def cap_clips_by_score(clips: list[dict], max_clips: int) -> list[dict]:
-    """Keep only the top ``max_clips`` clips by ``viral_score`` (desc).
+def cap_clips_by_score(clips: list[dict], max_clips: int, min_score: int = 0) -> list[dict]:
+    """Select a segment's clips by ``viral_score``.
 
-    Used to bound a segment's output for a publish-limited monitor. A
-    non-positive ``max_clips`` (or a count already at/under the cap) is a no-op.
-    Ties keep their original relative order (stable sort).
+    ``min_score`` (auto selection) first drops every clip scoring below the
+    floor — the count then follows the material instead of being fixed, and a
+    segment with nothing good yields nothing. ``max_clips`` then keeps the
+    top-N by ``viral_score`` (desc) as a ceiling; a non-positive ``max_clips``
+    (or a count already at/under it) is a no-op. Ties keep their original
+    relative order (stable sort).
     """
+    if min_score and min_score > 0:
+        clips = [c for c in clips if c.get("viral_score", 0) >= min_score]
     if not max_clips or max_clips <= 0 or len(clips) <= max_clips:
         return clips
     ranked = sorted(clips, key=lambda c: c.get("viral_score", 0), reverse=True)

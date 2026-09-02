@@ -167,7 +167,7 @@ Runtime env overrides (rarely needed):
 | `REFRAME_SALIENT_GENERAL` | _(off)_ | Content-aware crop for faceless scenes instead of letterboxing. |
 | `REFRAME_OBJECT_WEIGHTS` | _(off)_ | Faceless scenes follow a weighted-object centroid (product/dog/car) by reusing the existing YOLO pass. `1` = curated defaults, or `dog:3,car:2` for custom weights. |
 | `REFRAME_FRAMESHIFT_WEIGHTS` | _(GUI defaults)_ | `object`-mode class weights. Defaults `face:1,person:0.8,default:0.5`; override any of those three or add a COCO class, e.g. `face:1,person:0.8,default:0.5,dog:3`. |
-| `YTDLP_PLAYER_CLIENTS` | `default,tv+tv_embedded,web_safari` | Comma-separated yt-dlp player-client fallback chain; each entry is `default` (no override) or a `+`-joined client list. On a 403 / format-negotiation failure the next entry is tried (5 s apart); page-level blocks (bot wall, private/removed, geo) stop the chain immediately. |
+| `YTDLP_PLAYER_CLIENTS` | `default,web_embedded,web_safari` | Comma-separated yt-dlp player-client fallback chain; each entry is `default` (no override) or a `+`-joined client list. On a 403 / format-negotiation failure the next entry is tried (5 s apart); page-level blocks (bot wall, private/removed, geo) stop the chain immediately. `tv_embedded` is gone since yt-dlp 2026.8.19. |
 | `CLIPPYME_X264_CRF` | `18` | Shared libx264 quality for every render/compose encode (near-visually-lossless; lower = higher quality + bigger files, 0–51). Stops the stacked re-encodes from compounding into soft output. |
 | `CLIPPYME_X264_PRESET` | `medium` | Shared libx264 preset; a faster preset (e.g. `fast`) trades a little quality/size for render speed. |
 | `ZERNIO_DEFAULT_TZ` | `America/New_York` | Default IANA timezone for Zernio publishing and the live monitor when no profile/monitor timezone is configured. |
@@ -183,6 +183,8 @@ Runtime env overrides (rarely needed):
 | `REFRAME_GLOBAL_SMOOTH` / `REFRAME_GLOBAL_METHOD` | _(off)_ / `savgol` | Opt-in 2-pass trajectory smoothing. ⚠️ `kalman`/`l2` only take effect with `REFRAME_STATIC_AUTO=0` — under the default static-auto policy each scene collapses to one locked crop and the trajectory smoother never runs. |
 | `CLIPPYME_YOLO_PATH` | `data/cache/ultralytics/yolov8n.pt` | Path to the YOLOv8n weights used by person-detection fallback. Downloaded once into the persistent cache on first use (background pre-warm at job start); if the download fails the reframe degrades to face-only tracking / letterbox instead of failing the clip. |
 | `CLIPPYME_CREATOR_NAME` | _(unset)_ | Channel owner passed to the Gemini prompt so titles can name whose stream the clip is from. Set per-job by the Live Monitor; never used to attribute a quote. |
+| `CLIPPYME_MAX_CLIPS` | _(disabled)_ | Cap how many ranked candidates are actually rendered (`0` = no cap). |
+| `CLIPPYME_MIN_VIRAL_SCORE` | _(disabled)_ | Drop clips scoring below this (1–100) before the cap — the clip count then follows the material (a weak segment can yield zero clips). Set by the Live Monitor's "Automatic" clip selection. |
 
 ---
 

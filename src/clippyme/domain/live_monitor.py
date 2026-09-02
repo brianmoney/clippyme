@@ -1150,6 +1150,14 @@ class LiveMonitor:
         # value, and the pipeline already reads CLIPPYME_MAX_CLIPS=0 as uncapped.
         configured_max = self.cfg.get("max_clips")
         env["CLIPPYME_MAX_CLIPS"] = str(5 if configured_max is None else int(configured_max))
+        # "auto" clip selection: drop everything under the min_viral_score floor
+        # before the top-N cap, so a weak segment publishes fewer clips (or
+        # none) instead of padding the quota with filler. "fixed" (default)
+        # never sets the floor env.
+        if self.cfg.get("clip_selection") == "auto":
+            env["CLIPPYME_MIN_VIRAL_SCORE"] = str(self.cfg.get("min_viral_score") or 70)
+        else:
+            env.pop("CLIPPYME_MIN_VIRAL_SCORE", None)
         # The channel is the stream owner: the prompt may use it as the SUBJECT
         # of a title ("<creator> ha trovato…") — never to attribute a quote to
         # them (SPEAKER ATTRIBUTION RULE still applies, guests exist).

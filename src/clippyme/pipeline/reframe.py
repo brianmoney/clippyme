@@ -847,6 +847,7 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
             reframe_mode=reframe_mode,
             zoom_end=zoom_end,
             aspect_ratio=aspect_ratio,
+            letterbox_zoom=letterbox_zoom,
         )
     finally:
         # A crash mid-render (e.g. YOLO weights unavailable) or an early return
@@ -863,7 +864,8 @@ def process_video_to_vertical(input_video, final_output_video, reframe_mode='aut
 
 def _process_video_to_vertical_impl(input_video, final_output_video, temp_files,
                                     reframe_mode='auto', zoom_end=None,
-                                    aspect_ratio: float = 9 / 16):
+                                    aspect_ratio: float = 9 / 16,
+                                    letterbox_zoom: float = 0.0):
     """The render body; ``temp_files`` (video/audio/cfr) lifecycle is owned by
     :func:`process_video_to_vertical` so all exit paths clean up."""
     # 'object' is the legacy name for the FrameShift face-first 'subject' mode —
