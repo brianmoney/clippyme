@@ -91,6 +91,19 @@ def test_sanitize_filename_truncates_to_100():
     assert len(dl.sanitize_filename("x" * 250)) == 100
 
 
+def test_display_title_reverses_sanitize_filename_spaces():
+    assert dl.display_title(dl.sanitize_filename("my cool video")) == "my cool video"
+
+
+def test_display_title_handles_none_and_empty():
+    assert dl.display_title(None) == ""
+    assert dl.display_title("") == ""
+
+
+def test_display_title_strips_surrounding_whitespace():
+    assert dl.display_title("_leading and trailing_") == "leading and trailing"
+
+
 def test_resolve_cookies_explicit_wins(tmp_path):
     explicit = str(tmp_path / "given.txt")
     assert dl._resolve_cookies_path(explicit) == explicit
@@ -125,7 +138,7 @@ def test_resolve_cookies_none_when_nothing_available(tmp_path, monkeypatch):
 
 def test_player_client_chain_default(monkeypatch):
     monkeypatch.delenv("YTDLP_PLAYER_CLIENTS", raising=False)
-    assert dl._player_client_chain() == ["default", "tv+tv_embedded", "web_safari"]
+    assert dl._player_client_chain() == ["default", "web_embedded", "web_safari"]
 
 
 def test_player_client_chain_env_override(monkeypatch):
@@ -135,7 +148,7 @@ def test_player_client_chain_env_override(monkeypatch):
 
 def test_player_client_chain_blank_env_falls_back(monkeypatch):
     monkeypatch.setenv("YTDLP_PLAYER_CLIENTS", "   ")
-    assert dl._player_client_chain() == ["default", "tv+tv_embedded", "web_safari"]
+    assert dl._player_client_chain() == ["default", "web_embedded", "web_safari"]
 
 
 def test_extractor_args_default_is_none():

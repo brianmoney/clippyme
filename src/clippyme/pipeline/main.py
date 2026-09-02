@@ -138,6 +138,7 @@ _MOUTH_RIGHT = 308
 from clippyme.pipeline.scene_detection import detect_scenes, get_video_resolution  # noqa: E402
 from clippyme.pipeline.download import (  # noqa: E402
     download_youtube_video,
+    display_title,
     sanitize_filename,
     _resolve_cookies_path,
 )
@@ -539,17 +540,27 @@ def get_viral_clips(transcript_result, video_duration, instructions=None, min_du
             print("❌ No clips with transcript words in range (hallucination/empty transcript guard)")
             return None
 
-        # Bound a publish-limited monitor's output to the top-N by viral_score.
-        # Unset/0 (manual jobs) → keep them all.
-        _max_clips = os.getenv("CLIPPYME_MAX_CLIPS")
-        if _max_clips:
+        # Bound a publish-limited monitor's output: an optional viral_score
+        # floor (auto selection — the count follows the material) plus a
+        # top-N ceiling. Both unset/0 (manual jobs) → keep them all.
+        def _env_int(name: str) -> int:
             try:
-                _n = int(_max_clips)
+                return int(os.getenv(name) or 0)
             except ValueError:
-                _n = 0
-            if _n > 0 and len(clips) > _n:
-                clips = cap_clips_by_score(clips, _n)
-                print(f"✂️  Capped to top {_n} clips by viral_score (was more).")
+                return 0
+
+        _n, _floor = _env_int("CLIPPYME_MAX_CLIPS"), _env_int("CLIPPYME_MIN_VIRAL_SCORE")
+        if _n > 0 or _floor > 0:
+            _before = len(clips)
+            clips = cap_clips_by_score(clips, _n, _floor)
+            if len(clips) != _before:
+                print(
+                    f"✂️  Clip selection: {_before} → {len(clips)} "
+                    f"(max={_n or 'none'}, min_score={_floor or 'none'})."
+                )
+        if not clips:
+            print("❌ No clips cleared the viral_score floor")
+            return None
 
         # Ensure every clip has a viral_hook_text. Logic lives in
         # gemini_parser.backfill_hook_text so both the main pipeline AND
@@ -583,17 +594,22 @@ def build_texttiling_fallback(transcript_result, video_title):
         if not topic_clips:
             return None
         print(f"🧩 Gemini unavailable — lexical TextTiling found {len(topic_clips)} topic clips.")
+        title_text = display_title(video_title)
         shorts = []
         for i, tc in enumerate(topic_clips):
             snippet = (tc.get('text') or '').strip()
+            # No AI hook available here, so the best real (non-mangled, per-clip
+            # distinct) substitute is this clip's own opening words rather than
+            # the shared video title, which would be identical on every clip.
+            hook_text = " ".join(snippet.split()[:10]).strip() or f"{title_text} — part {i + 1}"
             shorts.append({
                 'start': float(tc['start']),
                 'end': float(tc['end']),
-                'video_title_for_youtube_short': f"{video_title} — part {i + 1}",
+                'video_title_for_youtube_short': f"{title_text} — part {i + 1}",
                 'tiktok_caption': snippet[:150],
                 'viral_score': 0,
                 'viral_reason': "Topic-segmented fallback (no AI scoring — Gemini was unavailable).",
-                'hook': '',
+                'viral_hook_text': hook_text,
             })
         return {"shorts": shorts}
     except Exception as e:  # noqa: BLE001 — fallback must never break the pipeline

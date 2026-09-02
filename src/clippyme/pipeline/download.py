@@ -105,6 +105,19 @@ def sanitize_filename(filename):
     return filename[:100] or 'video'
 
 
+def display_title(name):
+    """Undo ``sanitize_filename``'s space-to-underscore substitution for text a
+    user will actually read (fallback hook/title text, never a filename).
+
+    ``sanitize_filename`` output (or an on-disk basename derived from it) is
+    the only "title" some code paths have left once Gemini fails to supply
+    per-clip fields — showing it verbatim reads as a mangled wall of
+    underscores. This is a best-effort cosmetic reversal, not a true inverse
+    (the characters ``sanitize_filename`` strips outright are gone for good).
+    """
+    return (name or "").replace('_', ' ').strip()
+
+
 def _resolve_cookies_path(explicit: str | None) -> str | None:
     """Resolve the cookies.txt path used by yt-dlp.
 
@@ -139,8 +152,12 @@ _FORMAT_LADDER = (
     'best[ext=mp4]/bestvideo*+bestaudio/best'
 )
 
-# Player-client fallback chain (mid-2026 verified bot-resistance order).
-_DEFAULT_PLAYER_CLIENTS = ("default", "tv+tv_embedded", "web_safari")
+# Player-client fallback chain (verified against yt-dlp 2026.8.19 bot-resistance
+# order). "default" lets yt-dlp use its own client set; web_embedded is the
+# modern age-gate/DRM workaround; web_safari is the last browser fallback.
+# NOTE: tv_embedded was removed upstream in 2026.8.19 (DRM experiment broke it),
+# so it must never be re-added here.
+_DEFAULT_PLAYER_CLIENTS = ("default", "web_embedded", "web_safari")
 
 
 def _player_client_chain():

@@ -8,6 +8,7 @@ import os
 import re
 
 from clippyme.domain.clip_resolve import clip_filename_for
+from clippyme.pipeline.download import display_title
 from clippyme.pipeline.reframe_ops import normalize_letterbox_zoom
 from clippyme.domain.runtime_state import runtime_result_fields
 
@@ -136,7 +137,10 @@ def _build_clips(data: dict, base_name: str, job_id: str, output_dir: str, only_
                     "s": word.get("start", 0.0),
                     "e": word.get("end", 0.0),
                 })
-        backfill_hook_text(clips, words, fallback_title=base_name)
+        # base_name is the on-disk metadata stem — filesystem-sanitized
+        # (spaces stripped to underscores), so it must be de-mangled before
+        # it can stand in as a human-facing hook.
+        backfill_hook_text(clips, words, fallback_title=display_title(base_name))
     except Exception as exc:
         logger.debug("backfill_hook_text failed: %s", exc)
 
