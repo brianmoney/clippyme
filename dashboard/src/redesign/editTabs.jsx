@@ -7,6 +7,7 @@ import { HookStyleControls, HookPreview } from './hookStyle';
 import { SubtitleControls } from './subtitleControls';
 import { LogoControls, GradeControls } from './layerControls';
 import { BannerControls } from './bannerControls';
+import { LANGUAGES } from './data';
 
 export const REFRAME_OPTS = [
   { id: 'auto', label: 'Auto' },
@@ -104,7 +105,7 @@ export function CaptionsTab({ on, onToggle, subs, onSubsChange }) {
   );
 }
 
-export function HookTab({ on, onToggle, bulk, text, onText, style, onStyle }) {
+export function HookTab({ on, onToggle, bulk, text, onText, style, onStyle, rewrite }) {
   return (
     <>
       <div className="edit-opt">
@@ -119,11 +120,26 @@ export function HookTab({ on, onToggle, bulk, text, onText, style, onStyle }) {
               Applying the hook <b>style</b> to all selected clips. Each clip keeps its own hook text.
             </div>
           ) : (
-            <div className="cf-row">
-              <span className="field-label" style={{ marginBottom: 9, display: 'flex' }}>Hook text</span>
-              <textarea className="ta" rows="2" value={text} placeholder="e.g. THIS changed everything"
-                onChange={(e) => onText(e.target.value)}></textarea>
-            </div>
+            <>
+              <div className="cf-row">
+                <span className="field-label" style={{ marginBottom: 9, display: 'flex' }}>Hook text</span>
+                <textarea className="ta" rows="2" value={text} placeholder="e.g. THIS changed everything"
+                  onChange={(e) => onText(e.target.value)}></textarea>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <select className="sel" value={rewrite?.language || 'en'} onChange={(e) => rewrite?.setLanguage(e.target.value)}
+                  disabled={rewrite?.busy} aria-label="Hook language">
+                  {LANGUAGES.filter(([v]) => v !== 'multi').map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+                <Btn onClick={() => rewrite?.rewrite(onText)} disabled={rewrite?.busy}>
+                  <Icon n={rewrite?.busy ? 'loader' : 'wand-sparkles'} style={{ width: 14, height: 14 }} />
+                  {rewrite?.busy ? 'Rewriting…' : 'Rewrite with AI'}
+                </Btn>
+              </div>
+              {rewrite?.msg && <div className="eo-d" style={{ marginBottom: 8 }}>{rewrite.msg}</div>}
+            </>
           )}
           <div style={{ marginTop: bulk ? 0 : 10 }}><HookPreview text={bulk ? 'Your hook text' : text} style={style} /></div>
           <HookStyleControls style={style} set={onStyle} />

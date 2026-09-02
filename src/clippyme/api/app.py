@@ -37,7 +37,7 @@ from clippyme.domain.errors import ClippyMeError
 from clippyme.domain.uploads import stream_upload_within_limit, FileTooLarge
 from clippyme.domain.clip_endpoints import run_smart_cut, restore_job_from_disk
 from clippyme.domain.clip_resolve import resolve_clip
-from clippyme.domain.job_artifacts import load_job_metadata
+from clippyme.domain.job_artifacts import load_job_metadata, save_job_metadata
 from clippyme.domain import job_control
 from clippyme.domain.job_actions import cancel_job_action, stop_job_action
 from clippyme.domain.job_journal import JOURNAL_FILENAME, make_journal_writer, recover_jobs
@@ -49,6 +49,7 @@ from clippyme.api.schemas import (
     CaptionOptimizeRequest,
     ComposeRequest,
     EditAIRequest,
+    HookRewriteRequest,
     LiveMonitorPublishingRequest,
     LiveMonitorStartRequest,
     LiveMonitorStopRequest,
@@ -720,6 +721,86 @@ async def edit_clip_ai(
         clip_duration=duration,
     )
     return {"drop_ranges": result["drops"], "explanation": result["explanation"]}
+
+
+def _sync_in_memory_hook(job_id: str, clip_index: int, hook_text: str) -> None:
+    """Refresh the in-memory job's result clip so a re-poll keeps the new text.
+
+    The status endpoint serves ``jobs[job_id]["result"]`` snapshots built from
+    disk metadata; after a rewrite we persist the metadata and mirror the value
+    here so a job that is still in memory (restored or freshly completed)
+    reports the updated hook without waiting for the next disk re-read.
+    """
+    job = jobs.get(job_id)
+    if not job:
+        return
+    clips = ((job.get("result") or {}).get("clips")) or []
+    for entry in clips:
+        if entry.get("original_index") == clip_index:
+            entry["viral_hook_text"] = hook_text
+            break
+
+
+@app.post("/api/hook/rewrite/{job_id}/{clip_index}")
+async def rewrite_clip_hook(
+    job_id: str,
+    clip_index: int,
+    req: HookRewriteRequest,
+    request: Request,
+    api_key: Optional[str] = Header(None, alias="X-Gemini-Key"),
+):
+    """Rewrite a clip's hook text via Gemini in a target language.
+
+    The pipeline writes hooks in the transcript's language (the Gemini prompt's
+    LANGUAGE RULE), so a mixed-language video can yield hooks in the wrong
+    language. This asks Gemini to rewrite the clip's hook in ``req.language``
+    using the clip's own transcript, persists the result into the clip metadata
+    (so every future compose / publish / live-monitor burn uses it) and returns
+    the new text for the UI. A failed model call returns ``error`` (HTTP 200)
+    rather than 500 — the user sees the reason inline.
+    """
+    require_trusted_config_request(request)
+    if not is_valid_job_id(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+    resolved = await asyncio.to_thread(
+        resolve_clip, job_id, clip_index, OUTPUT_DIR, require_file=False)
+    clip = resolved.clip_info
+    start, end = clip.get("start", 0), clip.get("end", 0)
+    duration = round(max(0.0, end - start), 3)
+
+    transcript = resolved.metadata.get("transcript") or {}
+    from clippyme.domain.smartcut import clip_transcript_segments
+    segments = clip_transcript_segments(transcript, start, end)
+
+    cfg = load_persistent_config() or {}
+    key = api_key or os.environ.get("GEMINI_API_KEY") or cfg.get("GEMINI_API_KEY")
+    model = req.model or cfg.get("GEMINI_MODEL") or "gemini-3.5-flash"
+    if not key:
+        raise HTTPException(status_code=400, detail="Gemini API key not configured")
+
+    from clippyme.domain.hook_rewrite import rewrite_hook
+    result = await asyncio.to_thread(
+        rewrite_hook,
+        api_key=key,
+        model=model,
+        segments=segments,
+        current_hook=clip.get("viral_hook_text") or "",
+        target_language=req.language,
+        clip_duration=duration,
+    )
+    hook_text = result["hook_text"]
+    if hook_text and hook_text != (clip.get("viral_hook_text") or ""):
+        shorts = resolved.metadata.setdefault("shorts", [])
+        if 0 <= clip_index < len(shorts):
+            shorts[clip_index]["viral_hook_text"] = hook_text
+            await asyncio.to_thread(
+                save_job_metadata, resolved.metadata_path, resolved.metadata)
+            _sync_in_memory_hook(job_id, clip_index, hook_text)
+    return {
+        "hook_text": hook_text,
+        "error": result["error"],
+        "language": req.language,
+    }
 
 
 @app.post("/api/captions/optimize/{job_id}")

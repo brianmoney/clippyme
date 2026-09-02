@@ -336,6 +336,29 @@ class EditAIRequest(BaseModel):
     )
 
 
+class HookRewriteRequest(BaseModel):
+    """Regenerate a clip's hook text via Gemini in a target language.
+
+    ``language`` is the ISO code of the language the hook must be written in
+    (e.g. ``en``); ``multi``/``auto`` are meaningless as a hook target and are
+    rejected. ``model`` optionally overrides the configured Gemini model.
+    """
+    language: str = Field("en", min_length=2, max_length=16)
+    model: Optional[str] = Field(
+        None, max_length=64, pattern=r"^gemini-[A-Za-z0-9.\-]{1,64}$"
+    )
+
+    @field_validator("language")
+    @classmethod
+    def _bound_language(cls, value: str) -> str:
+        normalized = _validate_language(value)
+        if not normalized or normalized in ("multi", "auto"):
+            raise ValueError(
+                "language must be a concrete language (e.g. 'en', 'it')"
+            )
+        return normalized
+
+
 class CaptionOptimizeRequest(BaseModel):
     """Batch caption generation for a job's clips via an OpenAI-compatible API.
 

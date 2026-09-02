@@ -96,11 +96,30 @@ export async function composeClip(jobId, index, { toggles, hook_params, subtitle
 
 // Conversational trim: a plain-English instruction → Gemini → spans to cut
 // (clip-relative seconds). Returns { drop_ranges: [[s,e],...], explanation }.
-export async function editClipAI(jobId, index, instruction, model) {
+// `apiKey` (optional) rides the X-Gemini-Key header so the backend can reach
+// Gemini even when the key lives only in the browser (localStorage), matching
+// submitProcessJob / getModels.
+export async function editClipAI(jobId, index, instruction, model, apiKey) {
   const res = await apiFetch(getApiUrl(`/api/edit-ai/${jobId}/${index}`), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(apiKey ? { 'X-Gemini-Key': apiKey } : {}) },
     body: JSON.stringify({ instruction, ...(model ? { model } : {}) }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// Rewrite a clip's hook text via Gemini in a target language (backend persists
+// it into the clip metadata). Returns { hook_text, error, language }. The key
+// rides X-Gemini-Key like editClipAI / submitProcessJob.
+export async function rewriteHookText(jobId, index, { language = 'en', model } = {}, apiKey) {
+  const res = await apiFetch(getApiUrl(`/api/hook/rewrite/${jobId}/${index}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(apiKey ? { 'X-Gemini-Key': apiKey } : {}) },
+    body: JSON.stringify({ language, ...(model ? { model } : {}) }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

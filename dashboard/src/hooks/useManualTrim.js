@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { getClipTranscript, editClipAI } from '../redesign/realApi';
 import { dropSetFromRanges, segmentIndicesHit, rangesFromDropSet } from '../lib/trimSelection';
 
-export function useManualTrim({ jobId, idx, active, initialDropRanges }) {
+export function useManualTrim({ jobId, idx, active, initialDropRanges, apiKey }) {
   const [segments, setSegments] = useState(null); // null = not loaded
   const [segErr, setSegErr] = useState(false);
   const [dropped, setDropped] = useState(() => new Set());
@@ -46,7 +46,7 @@ export function useManualTrim({ jobId, idx, active, initialDropRanges }) {
     if (!instr || busy || !jobId) return;
     setBusy(true); setMsg('');
     try {
-      const { drop_ranges = [], explanation = '' } = await editClipAI(jobId, idx, instr);
+      const { drop_ranges = [], explanation = '' } = await editClipAI(jobId, idx, instr, undefined, apiKey);
       const hit = segmentIndicesHit(segments || [], drop_ranges);
       if (hit.size) {
         setDropped((prev) => new Set([...prev, ...hit]));
