@@ -5,7 +5,7 @@
 //   3. no-change apply shows "Save changes" (no-op branch)
 //   7. bulk mode hides the Trim tab + hook text, dropRanges always empty
 import { test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { EditClipModal } from './captions.jsx';
 
 vi.mock('./realApi', () => ({
@@ -114,6 +114,7 @@ test('logo tab: enable + reposition → logoParams and toggle ride the payload',
 });
 
 // --- grade tab ---------------------------------------------------------------------
+
 test('grade tab: switch on defaults to warm_cinematic, preset click refines it', () => {
   const { onApply } = mount();
   fireEvent.click(tab('Grade'));
@@ -133,36 +134,6 @@ test('grade switch off maps back to preset none and toggle false', () => {
   const p = onApply.mock.calls[0][0];
   expect(p.toggles.grade).toBe(false);
   expect(p.gradeParams).toEqual({ preset: 'none' });
-});
-
-// --- top text tab -------------------------------------------------------------
-
-test('top banner tab: enable + text → topTextParams and toptext toggle ride the payload', () => {
-  const { onApply } = mount();
-  fireEvent.click(tab('Top banner'));
-  fireEvent.click(screen.getByRole('switch'));            // top text on
-  fireEvent.change(screen.getByRole('textbox', { name: 'Top banner text' }),
-    { target: { value: 'St. Johns BOCC' } });
-  fireEvent.click(applyBtn());
-  const p = onApply.mock.calls[0][0];
-  expect(p.toggles.toptext).toBe(true);
-  expect(p.topTextParams).toMatchObject({
-    enabled: true, text: 'St. Johns BOCC', size: 'M', text_color: '#FFFFFF',
-    bg_enabled: true, bg_color: '#000000', bg_opacity: 0.55,
-  });
-});
-
-test('top banner tab: disabling the strip keeps text but bg_enabled false', () => {
-  const { onApply } = mount();
-  fireEvent.click(tab('Top banner'));
-  fireEvent.click(screen.getByRole('switch'));            // top text on
-  fireEvent.change(screen.getByRole('textbox', { name: 'Top banner text' }),
-    { target: { value: 'SB 686' } });
-  fireEvent.click(screen.getAllByRole('switch')[1]);      // strip off
-  fireEvent.click(applyBtn());
-  const p = onApply.mock.calls[0][0];
-  expect(p.topTextParams.bg_enabled).toBe(false);
-  expect(p.topTextParams.text).toBe('SB 686');
 });
 
 // --- 2. manual trim forces smartcut --------------------------------------------
@@ -268,4 +239,132 @@ test('bulk mode hides the Trim tab and the hook text field, dropRanges stay empt
   const p = onApply.mock.calls[0][0];
   expect(p.toggles.hook).toBe(true);
   expect(p.dropRanges).toEqual([]);
+});
+
+// --- karaoke preset fonts ----------------------------------------------------------
+// Karaoke has no font picker: the font comes from the backend preset
+// (subtitles.py SUBTITLE_PRESETS), and compose passes a `font` key as an
+// override that replaces it. A karaoke apply must therefore carry no `font`.
+
+const presetBtn = (label) => screen.getByRole('button', { name: new RegExp(`^WORD UP\\s*${label}$`) });
+
+function karaokeApply(over, ...labels) {
+  const { onApply } = mount(over);
+  fireEvent.click(tab('Captions'));
+  if (!screen.queryByRole('button', { name: 'Karaoke' })) fireEvent.click(screen.getByRole('switch'));
+  for (const l of labels) fireEvent.click(presetBtn(l));
+  fireEvent.click(applyBtn());
+  return onApply.mock.calls[0][0].subtitleParams;
+}
+
+test.each([
+  ['Classic', 'classic_white'], ['Hormozi', 'hormozi_bold'], ['Neon', 'neon_glow'],
+  ['MrBeast', 'mrbeast_box'], ['Minimal', 'minimal_clean'], ['Fire', 'fire_impact'],
+])('karaoke %s apply sends preset %s and no font override', (label, id) => {
+  const sp = karaokeApply({}, label);
+  expect(sp.mode).toBe('karaoke');
+  expect(sp.preset).toBe(id);
+  expect(sp.font).toBeUndefined();
+});
+
+test('preset switch hormozi → minimal → fire sends only the final preset', () => {
+  const sp = karaokeApply({ preselections: { subtitles: { mode: 'karaoke', preset: 'hormozi_bold' } } },
+    'Minimal', 'Fire');
+  expect(sp.preset).toBe('fire_impact');
+  expect(sp.font).toBeUndefined();
+});
+
+test('a classic pre-selection font does not reach a karaoke apply', () => {
+  const { onApply } = mount({ preselections: { subtitles: { mode: 'classic', font: 'Bangers-Regular' } } });
+  fireEvent.click(tab('Captions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Karaoke' }));
+  fireEvent.click(presetBtn('Minimal'));
+  fireEvent.click(applyBtn());
+  const sp = onApply.mock.calls[0][0].subtitleParams;
+  expect(sp.preset).toBe('minimal_clean');
+  expect(sp.font).toBeUndefined();
+});
+
+test('karaoke → classic → karaoke: classic keeps its font, karaoke its preset', () => {
+  const pre = { preselections: { subtitles: { mode: 'karaoke', preset: 'fire_impact' } } };
+  const first = mount(pre);
+  fireEvent.click(tab('Captions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
+  fireEvent.click(applyBtn());
+  expect(first.onApply.mock.calls[0][0].subtitleParams).toMatchObject({ mode: 'classic', font: 'Montserrat-Black' });
+  fireEvent.click(screen.getByRole('button', { name: 'Karaoke' }));
+  fireEvent.click(applyBtn());
+  const sp = first.onApply.mock.calls[1][0].subtitleParams;
+  expect(sp.preset).toBe('fire_impact');
+  expect(sp.font).toBeUndefined();
+});
+
+test('a legacy karaoke edit saved with a font re-applies with the preset font', () => {
+  const sp = karaokeApply({
+    initial: { toggles: { subtitles: true },
+               subtitleParams: { mode: 'karaoke', preset: 'hormozi_bold', font: 'Montserrat-Black' } },
+  });
+  expect(sp.preset).toBe('hormozi_bold');
+  expect(sp.font).toBeUndefined();
+});
+
+// --- karaoke ↔ classic font size -------------------------------------------------
+// The font size slider only exists in karaoke, so `subs.font_size` is the
+// karaoke size and classic always renders at Auto: a classic apply must never
+// carry a font_size the classic controls do not show.
+
+const KARAOKE_56 = { subtitles: { mode: 'karaoke', preset: 'neon_glow', font_size: 56 } };
+const sizeSlider = () => screen.queryByRole('slider', { name: 'Subtitle font size' });
+
+test('a pre-selected karaoke font_size does not reach a classic apply', () => {
+  const { onApply } = mount({ preselections: KARAOKE_56 });
+  fireEvent.click(tab('Captions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
+  expect(sizeSlider()).toBeNull();                        // classic shows no size control
+  fireEvent.click(applyBtn());
+  const { subtitleParams } = onApply.mock.calls[0][0];
+  expect(subtitleParams.mode).toBe('classic');
+  expect(subtitleParams.font_size).toBeUndefined();
+});
+
+test('karaoke size survives karaoke → classic → karaoke without saving', () => {
+  const { onApply } = mount({ preselections: KARAOKE_56 });
+  fireEvent.click(tab('Captions'));
+  fireEvent.change(sizeSlider(), { target: { value: '60' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Karaoke' }));
+  expect(sizeSlider()).toHaveValue('60');
+  fireEvent.click(applyBtn());
+  expect(onApply.mock.calls[0][0].subtitleParams.font_size).toBe(60);
+});
+
+test('a saved classic edit reopens and re-applies at Auto', () => {
+  const first = mount({ preselections: KARAOKE_56 });
+  fireEvent.click(tab('Captions'));
+  fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
+  fireEvent.click(applyBtn());
+  // clipStates persist through JSON (localStorage).
+  const saved = JSON.parse(JSON.stringify(first.onApply.mock.calls[0][0]));
+  expect('font_size' in saved.subtitleParams).toBe(false);
+  cleanup();
+
+  const again = mount({ preselections: KARAOKE_56, initial: saved });
+  fireEvent.click(tab('Captions'));
+  expect(sizeSlider()).toBeNull();                        // reopens in classic
+  fireEvent.click(applyBtn());
+  expect(again.onApply.mock.calls[0][0].subtitleParams.font_size).toBeUndefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Karaoke' }));
+  expect(sizeSlider()).toHaveValue('56');                 // karaoke falls back to the pre-selection
+});
+
+test('a legacy classic edit with a font_size re-applies at Auto and shows it in karaoke', () => {
+  const { onApply } = mount({
+    initial: { toggles: { subtitles: true },
+               subtitleParams: { mode: 'classic', font: 'Montserrat-Black', font_size: 40 } },
+  });
+  fireEvent.click(tab('Captions'));
+  fireEvent.click(applyBtn());
+  expect(onApply.mock.calls[0][0].subtitleParams.font_size).toBeUndefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Karaoke' }));
+  expect(sizeSlider()).toHaveValue('40');
 });

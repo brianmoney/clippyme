@@ -2,30 +2,32 @@
 
 The old pixel-faithful mirror (dashboard/src/lib/subtitlePresets.js) was deleted
 with the legacy SubtitleModal component tree — nothing live rendered it. The
-redesign's preset grid is a *cosmetic* CSS mirror in dashboard/src/redesign/
-data.js (system fonts, no fontsize) whose ONLY data-bearing field is the `hi`
-highlight colour. This test enforces that:
+UI's preset grid is a CSS mirror in dashboard/src/lib/uiOptions.js (no
+fontsize) whose data-bearing fields are the `hi` highlight colour and the
+`font` it previews with (the bundled face, loaded via @font-face). This test
+enforces that:
 
-  1. the preview lists exactly the backend preset ids, and
-  2. each preview `hi` equals the backend `highlight_color`
+  1. the preview lists exactly the backend preset ids,
+  2. each preview `hi` equals the backend `highlight_color`, and
+  3. each preview `font` equals the backend `font`
 
-so the colour a user sees on the "UP" word in the picker matches what burns in.
-Full fontsize/font parity is intentionally NOT asserted — the cosmetic mirror
-does not carry those (the real render uses the backend preset directly).
+so the colour and typeface a user sees in the picker match what burns in.
+Fontsize parity is intentionally NOT asserted — the preview does not carry it
+(the real render uses the backend preset directly).
 """
 import os
 import re
 
-from clippyme.domain.subtitles import SUBTITLE_PRESETS as BACKEND
+from clippyme.editing.subtitles import SUBTITLE_PRESETS as BACKEND
 
 _JS_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..",
-    "dashboard", "src", "redesign", "data.js",
+    "dashboard", "src", "lib", "uiOptions.js",
 )
 
 
 def _parse_preview_presets(text: str) -> dict:
-    """Extract {id: hi_hex_upper} from the data.js SUBTITLE_PRESETS array."""
+    """Extract {id: hi_hex_upper} from the uiOptions.js SUBTITLE_PRESETS array."""
     body = text.split("SUBTITLE_PRESETS", 1)[1]
     out: dict = {}
     # Each entry: { id: 'classic_white', label: 'Classic', hi: '#FFFF00', ... }
@@ -49,5 +51,21 @@ def test_preview_highlight_colors_match_backend():
     for pid, bp in BACKEND.items():
         assert preview[pid] == bp["highlight_color"].upper(), (
             f"{pid}: highlight backend={bp['highlight_color']} preview={preview[pid]} — "
-            f"update data.js SUBTITLE_PRESETS `hi` to match subtitles.py"
+            f"update uiOptions.js SUBTITLE_PRESETS `hi` to match subtitles.py"
+        )
+
+
+def test_preview_fonts_match_backend():
+    with open(_JS_PATH, encoding="utf-8") as f:
+        body = f.read().split("SUBTITLE_PRESETS", 1)[1]
+    # Each entry: { id: 'hormozi_bold', label: …, hi: …, font: 'Bangers-Regular', style: … }
+    preview = dict(re.findall(r"id:\s*'([^']+)'[^}]*?font:\s*'([^']+)'", body))
+
+    assert set(preview) == set(BACKEND), (
+        f"preset id mismatch — backend={sorted(BACKEND)} preview fonts={sorted(preview)}"
+    )
+    for pid, bp in BACKEND.items():
+        assert preview[pid] == bp["font"], (
+            f"{pid}: font backend={bp['font']} preview={preview[pid]} — "
+            f"update uiOptions.js SUBTITLE_PRESETS `font` to match subtitles.py"
         )
