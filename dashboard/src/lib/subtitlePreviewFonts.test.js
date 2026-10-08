@@ -14,7 +14,7 @@ import { SUBTITLE_PRESETS } from '../redesign/data';
 // Vitest runs from dashboard/ (npm test); the bundled fonts sit at the repo root.
 const FONTS_DIR = resolve(cwd(), '..', 'fonts');
 // Read from disk: vitest stubs CSS imports (even ?raw) to an empty module.
-const appCss = readFileSync(resolve(cwd(), 'src', 'styles', 'app.css'), 'utf8');
+const appCss = readFileSync(resolve(cwd(), 'src', 'redesign', 'app.css'), 'utf8');
 const EXPECTED_WEIGHT = {
   'Montserrat-Black': '900', 'Bangers-Regular': '400', 'Poppins-Black': '900',
   'Poppins-Medium': '500', 'Anton-Regular': '400',

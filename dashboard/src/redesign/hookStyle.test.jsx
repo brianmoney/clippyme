@@ -9,7 +9,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { HookPreview, HookStyleControls } from './hookStyle.jsx';
 import { HOOK_STYLE_DEFAULT } from './data';
 
-vi.mock('../../api/client', () => ({
+vi.mock('./realApi', () => ({
   listFonts: vi.fn(async () => ({ fonts: ['Anton-Regular', 'MyBrand-Bold'] })),
 }));
 
