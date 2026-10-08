@@ -205,7 +205,7 @@ def _verbose_ffmpeg(monkeypatch, subs):
 def test_libass_renders_every_preset_with_its_bundled_font(clip, tmp_path, monkeypatch):
     """Presets name fonts by file stem; libass must load that file, not fall
     back to a system font (it used to render every preset in DejaVu Sans)."""
-    from clippyme.editing import subtitles as subs
+    from clippyme.domain import subtitles as subs
 
     monkeypatch.setattr(subs, "USER_FONTS_DIR", str(tmp_path / "user_fonts"))
     transcript = {"segments": [{"words": [{"word": "Hello", "start": 0.0, "end": 1.0}]}]}
@@ -220,7 +220,7 @@ def test_libass_renders_every_preset_with_its_bundled_font(clip, tmp_path, monke
 
 @pytest.mark.parametrize("font", ["Montserrat-Black", "Montserrat-ExtraBold", "Poppins-Black"])
 def test_srt_force_style_renders_the_chosen_bundled_font(clip, tmp_path, monkeypatch, font):
-    from clippyme.editing import subtitles as subs
+    from clippyme.domain import subtitles as subs
 
     monkeypatch.setattr(subs, "USER_FONTS_DIR", str(tmp_path / "user_fonts"))
     srt = tmp_path / "s.srt"
@@ -251,7 +251,7 @@ _LONG_CAPTION = "When everybody told me this would never work I kept building an
 def test_classic_and_karaoke_captions_sit_in_the_same_bottom_safe_area(tmp_path, monkeypatch, size, text):
     """Classic captions used to render 2333 px above the bottom edge (off
     screen): MarginV 350 is frame space, the SRT script is 384x288."""
-    from clippyme.editing import subtitles as subs
+    from clippyme.domain import subtitles as subs
 
     monkeypatch.setattr(subs, "USER_FONTS_DIR", str(tmp_path / "user_fonts"))
     video = str(tmp_path / "in.mp4")
@@ -327,7 +327,7 @@ def _stroke(ink, fill):
 def subs_module(tmp_path, monkeypatch):
     if not _has_ffmpeg():
         pytest.skip("ffmpeg not available")
-    from clippyme.editing import subtitles as subs
+    from clippyme.domain import subtitles as subs
     monkeypatch.setattr(subs, "USER_FONTS_DIR", str(tmp_path / "user_fonts"))
     return subs
 

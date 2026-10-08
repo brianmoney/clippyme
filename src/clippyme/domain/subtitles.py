@@ -424,7 +424,7 @@ def effective_fonts_dir():
     here is always a broken seed. Valid files (uploads) are never replaced."""
     import shutil
     import tempfile
-    from clippyme.editing.hook_overlay import _is_valid_font_file
+    from clippyme.domain.hooks import _is_valid_font_file
     try:
         os.makedirs(USER_FONTS_DIR, exist_ok=True)
         if os.path.isdir(FONTS_DIR) and os.path.abspath(FONTS_DIR) != os.path.abspath(USER_FONTS_DIR):

@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from clippyme.editing import subtitles as subs
+from clippyme.domain import subtitles as subs
 
 FRAME_W, FRAME_H = 1080, 1920
 
@@ -83,7 +83,7 @@ def test_classic_auto_font_size_is_unchanged(tmp_path, monkeypatch):
 def test_classic_compose_without_font_size_renders_the_auto_size(tmp_path, monkeypatch):
     import asyncio
 
-    from clippyme.editing import compose
+    from clippyme.domain import compose
 
     captured = {}
 

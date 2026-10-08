@@ -18,7 +18,7 @@ Fontsize parity is intentionally NOT asserted — the preview does not carry it
 import os
 import re
 
-from clippyme.editing.subtitles import SUBTITLE_PRESETS as BACKEND
+from clippyme.domain.subtitles import SUBTITLE_PRESETS as BACKEND
 
 _JS_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..",
