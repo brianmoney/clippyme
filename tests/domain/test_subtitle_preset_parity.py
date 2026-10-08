@@ -22,7 +22,7 @@ from clippyme.domain.subtitles import SUBTITLE_PRESETS as BACKEND
 
 _JS_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..",
-    "dashboard", "src", "lib", "uiOptions.js",
+    "dashboard", "src", "redesign", "data.js",
 )
 
 

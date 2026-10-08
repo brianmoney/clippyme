@@ -378,7 +378,7 @@ def _publish(root, index, **req):
     resolved = resolve_clip(JOB_ID, index, root, require_file=False)
     return publish_clip_flow(job_id=JOB_ID, clip_index=index, resolved=resolved,
                              req={"platforms": ["tiktok"], **req},
-                             zernio_cfg={"api_key": "k"})
+                             profile={"id": "default", "name": "test", "api_key": "k"})
 
 
 def test_same_title_clips_keep_their_own_composed_file(tmp_path, monkeypatch):
