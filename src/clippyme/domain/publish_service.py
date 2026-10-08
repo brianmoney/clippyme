@@ -52,11 +52,11 @@ async def publish_clip_flow(*, job_id: str, clip_index: int,
     async with clip_lock(resolved.job_dir, clip_index):
         return await _compose_and_upload(
             job_id=job_id, clip_index=clip_index, resolved=resolved, req=req,
-            api_key=api_key, zernio_cfg=zernio_cfg)
+            api_key=api_key, profile=profile)
 
 
 async def _compose_and_upload(*, job_id, clip_index, resolved, req, api_key,
-                              zernio_cfg) -> dict:
+                              profile) -> dict:
     job_dir = resolved.job_dir
     base_clip = resolved.clip_path
     upload_path = base_clip
