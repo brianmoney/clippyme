@@ -99,6 +99,6 @@ else:
     else:
         WHISPER_MODEL = "base"
 
-# Allow override via env var
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", WHISPER_MODEL)
+# Allow override via env var (empty string = unset, keep the auto-selection)
+WHISPER_MODEL = os.getenv("WHISPER_MODEL") or WHISPER_MODEL
 print(f"🎙️  Whisper model: {WHISPER_MODEL} (auto-selected for {'GPU ' + str(GPU_VRAM_GB) + 'GB' if CUDA_AVAILABLE else 'CPU ' + str(_total_ram_gb) + 'GB RAM'})")

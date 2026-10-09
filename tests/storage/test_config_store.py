@@ -233,6 +233,58 @@ def test_get_zernio_profile_by_id_and_default(tmp_config):
     assert config_store.get_zernio_profile()["name"] == "Client A"
 
 
+def test_zernio_profile_youtube_defaults_roundtrip(tmp_config):
+    assert config_store.save_zernio_config(profiles=[
+        {
+            "name": "Client A", "api_key": "k1", "is_default": True,
+            "youtube": {
+                "category_id": "25",
+                "made_for_kids": False,
+                "contains_synthetic_media": False,
+                "visibility": "unlisted",
+            },
+        },
+    ])
+    profile = config_store.load_zernio_config()["default_profile"]
+    assert profile["youtube"] == {
+        "category_id": "25",
+        "made_for_kids": False,
+        "contains_synthetic_media": False,
+        "visibility": "unlisted",
+    }
+    status = config_store.zernio_config_status()
+    assert status["profiles"][0]["youtube"]["category_id"] == "25"
+
+
+def test_zernio_profile_without_youtube_defaults_to_stock(tmp_config):
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "Client A", "api_key": "k1", "is_default": True},
+    ])
+    profile = config_store.load_zernio_config()["default_profile"]
+    assert profile["youtube"]["category_id"] == "22"
+    assert profile["youtube"]["visibility"] == "public"
+    assert profile["youtube"]["made_for_kids"] is False
+    assert profile["youtube"]["contains_synthetic_media"] is False
+
+
+def test_zernio_profile_invalid_youtube_defaults_rejected(tmp_config):
+    # category_id must be a numeric string.
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "A", "api_key": "k1", "is_default": True,
+         "youtube": {"category_id": "abc"}},
+    ]) is False
+    # made_for_kids must be a bool.
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "A", "api_key": "k1", "is_default": True,
+         "youtube": {"made_for_kids": "yes"}},
+    ]) is False
+    # Unknown youtube key rejected.
+    assert config_store.save_zernio_config(profiles=[
+        {"name": "A", "api_key": "k1", "is_default": True,
+         "youtube": {"bogus": 1}},
+    ]) is False
+
+
 def test_failed_atomic_write_preserves_previous_config(tmp_config, monkeypatch):
     tmp_config.parent.mkdir(parents=True, exist_ok=True)
     tmp_config.write_text('{"GEMINI_API_KEY":"old"}', encoding="utf-8")

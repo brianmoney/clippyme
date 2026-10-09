@@ -99,6 +99,19 @@ def test_config_rejects_invalid_provider_and_model(client):
     ).status_code == 422
 
 
+# --- /api/config/local-input ------------------------------------------------
+
+def test_local_input_dir_defaults_to_repo_videos(client, tmp_path):
+    assert client.get("/api/config/local-input").json() == {"dir": str(tmp_path / "videos")}
+
+
+def test_local_input_dir_honours_env_override(client, monkeypatch, tmp_path):
+    root = tmp_path / "nfs"
+    root.mkdir()
+    monkeypatch.setenv("LOCAL_INPUT_DIR", str(root))
+    assert client.get("/api/config/local-input").json() == {"dir": str(root)}
+
+
 # --- /api/config/models (network call stubbed) ------------------------------
 
 def test_models_lists_via_provided_key(client, monkeypatch):
@@ -241,6 +254,43 @@ def test_zernio_profiles_roundtrip(client):
 
     got = client.get("/api/config/zernio").json()
     assert len(got["profiles"]) == 2
+
+
+def test_zernio_profile_youtube_defaults_roundtrip(client):
+    r = client.post(
+        "/api/config/zernio",
+        json={"profiles": [
+            {
+                "name": "Client A",
+                "api_key": "sk_profile_one_key",
+                "is_default": True,
+                "accounts": {"youtube": "yt1"},
+                "youtube": {
+                    "category_id": "25",
+                    "made_for_kids": False,
+                    "contains_synthetic_media": False,
+                    "visibility": "unlisted",
+                },
+            },
+        ]},
+    )
+    assert r.status_code == 200
+    status = r.json()
+    assert status["profiles"][0]["youtube"]["category_id"] == "25"
+    assert status["profiles"][0]["youtube"]["visibility"] == "unlisted"
+
+    got = client.get("/api/config/zernio").json()
+    assert got["profiles"][0]["youtube"]["category_id"] == "25"
+
+    # A profile saved WITHOUT a youtube block still surfaces the stock defaults.
+    r2 = client.post(
+        "/api/config/zernio",
+        json={"profiles": [
+            {"name": "Client B", "api_key": "sk_profile_two_key", "is_default": True},
+        ]},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["profiles"][0]["youtube"]["category_id"] == "22"
 
 
 def test_zernio_discover_uses_selected_profile_key(client, monkeypatch):

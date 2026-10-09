@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
-  seedToggles, seedGradeParams, seedLogoParams, seedHookParams, seedSubtitleParams, seedBannerParams,
+  seedToggles, seedGradeParams, seedLogoParams, seedHookParams, seedSubtitleParams, seedBannerParams, seedTopTextParams,
 } from './seedClipParams.js';
 
 // seedClipParams is the single seam that keeps the Create pre-selection panel,
@@ -11,8 +11,46 @@ import {
 
 test('seedToggles defaults everything off', () => {
   assert.deepEqual(seedToggles(undefined), {
-    smartcut: false, hook: false, subtitles: false, logo: false, grade: false, banner: false,
+    smartcut: false, hook: false, subtitles: false, logo: false, grade: false, banner: false, toptext: false,
   });
+});
+
+test('seedToggles turns toptext on only when a real pre-selection enables it', () => {
+  assert.equal(seedToggles({ top_text: { enabled: true, text: 'SB 686' } }).toptext, true);
+  assert.equal(seedToggles({ top_text: { enabled: false, text: 'SB 686' } }).toptext, false);
+  assert.equal(seedToggles({ top_text: false }).toptext, false);
+  assert.equal(seedToggles(undefined).toptext, false);
+});
+
+test('seedTopTextParams prefers an explicit pre-selection', () => {
+  const pre = {
+    top_text: {
+      enabled: true, text: 'St. Johns BOCC', size: 'L',
+      text_color: '#FFE000', bg_enabled: true, bg_color: '#000000', bg_opacity: 0.8,
+    },
+  };
+  assert.deepEqual(seedTopTextParams(pre), {
+    enabled: true, text: 'St. Johns BOCC', size: 'L',
+    text_color: '#FFE000', bg_enabled: true, bg_color: '#000000', bg_opacity: 0.8,
+  });
+});
+
+test('seedTopTextParams defaults disabled with backend-matching style', () => {
+  const out = seedTopTextParams(undefined);
+  assert.equal(out.enabled, false);
+  assert.equal(out.text, 'St. Johns BOCC Public comments — SB 686'); // example pre-filled
+  assert.equal(out.size, 'M');
+  assert.equal(out.text_color, '#FFFFFF');
+  assert.equal(out.bg_enabled, true);
+  assert.equal(out.bg_color, '#000000');
+  assert.equal(out.bg_opacity, 0.55);
+});
+
+test('seedTopTextParams falls back to the example when the pre-selection has no text', () => {
+  const out = seedTopTextParams({ top_text: { enabled: true, size: 'S' } });
+  assert.equal(out.enabled, true);
+  assert.equal(out.text, 'St. Johns BOCC Public comments — SB 686');
+  assert.equal(out.size, 'S');
 });
 
 test('seedBannerParams prefers an explicit pre-selection over the source suggestion', () => {

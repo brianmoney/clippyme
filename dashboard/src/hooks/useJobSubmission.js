@@ -2,15 +2,25 @@ import { useEffect, useRef } from 'react';
 import { submitProcessJob, submitBatchJob } from '../lib/api';
 import { getApiUrl } from '../config';
 import { apiFetch } from '../lib/apiToken';
-import { tasteInstructionSuffix } from '../lib/taste';
+import { loadTasteEvents, tasteSignal } from '../lib/taste';
 
 // Append the cross-job taste hint (#8) to a job's AI instructions so Gemini
-// biases viral detection toward what the user actually kept in past jobs.
+// biases viral detection toward what the user actually kept in past jobs. The
+// text hint alone cannot raise the clip length past the prompt's hard 15-60s
+// window, so a duration preference also fills `min_duration` — unless the user
+// set "Min clip length" explicitly (an explicit setting always wins).
 function withTaste(data) {
-  const hint = tasteInstructionSuffix();
-  if (!hint) return data;
-  const base = (data.instructions || '').trim();
-  return { ...data, instructions: base ? `${base} ${hint}` : hint };
+  const { hint, minDuration } = tasteSignal(loadTasteEvents());
+  const pre = data.preselections || {};
+  const next = { ...data };
+  if (hint) {
+    const base = (data.instructions || '').trim();
+    next.instructions = base ? `${base} ${hint}` : hint;
+  }
+  if (minDuration && !(Number(pre.min_duration) > 0)) {
+    next.preselections = { ...pre, min_duration: minDuration };
+  }
+  return next;
 }
 
 /**

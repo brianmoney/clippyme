@@ -4,7 +4,9 @@
 // discarded) and distils it into a one-line natural-language hint that is
 // appended to the Gemini `instructions` on the NEXT job. The hint rides the
 // EXISTING instructions channel, so no backend change is needed: it reaches
-// `get_viral_clips` exactly like a user-typed directive.
+// `get_viral_clips` exactly like a user-typed directive. A preferred LENGTH
+// above the prompt's default 60s ceiling also raises the `min_duration` floor
+// (see `withTaste`), because the hint alone cannot override that hard window.
 //
 // Pure functions (summarizeTaste) are unit-tested via `node --test`; the
 // localStorage I/O is thin and guarded.
@@ -48,14 +50,20 @@ function median(nums) {
   return xs.length % 2 ? xs[m] : Math.round((xs[m - 1] + xs[m]) / 2);
 }
 
-// Pure: events → short hint string (or '' when there isn't enough signal).
-export function summarizeTaste(events) {
+// Pure: events → distilled taste signal. `hint` is the natural-language
+// suffix appended to a job's Gemini `instructions`; `minDuration` is the
+// numeric per-clip floor that MUST also ride `min_duration`. Reason: the
+// prompt enforces a hard {min}–{max}s window (default 15–60s) that outranks
+// the free-text hint, so a preference longer than 60s is silently ignored
+// unless the floor is raised. `min_duration=M` yields an [M, M+30s] window.
+export function tasteSignal(events) {
   const evs = (events || []).filter((e) => e && (e.a === 'kept' || e.a === 'discarded'));
-  if (evs.length < MIN_EVENTS) return '';
+  if (evs.length < MIN_EVENTS) return { hint: '', minDuration: null };
 
   const kept = evs.filter((e) => e.a === 'kept');
   const discarded = evs.filter((e) => e.a === 'discarded');
   const parts = [];
+  let minDuration = null;
 
   // Preferred length from clips the user kept.
   const keptDur = median(kept.map((e) => e.d));
@@ -63,6 +71,7 @@ export function summarizeTaste(events) {
     const lo = Math.max(5, keptDur - 6);
     const hi = keptDur + 6;
     parts.push(`prefer clips roughly ${lo}-${hi}s long`);
+    minDuration = lo;
   }
 
   // Score band the user tends to discard: if discarded clips skew low-score.
@@ -72,11 +81,23 @@ export function summarizeTaste(events) {
     parts.push(`avoid weak moments — the user discards clips scoring below about ${keptMedScore}`);
   }
 
-  if (!parts.length) return '';
-  return `Based on the user's past edits, ${parts.join(' and ')}.`;
+  if (!parts.length) return { hint: '', minDuration: null };
+  return { hint: `Based on the user's past edits, ${parts.join(' and ')}.`, minDuration };
+}
+
+// Pure: the natural-language hint only (back-compat for callers that just
+// append text).
+export function summarizeTaste(events) {
+  return tasteSignal(events).hint;
 }
 
 // Convenience: the suffix to append to a job's AI instructions.
 export function tasteInstructionSuffix() {
-  return summarizeTaste(loadTasteEvents());
+  return tasteSignal(loadTasteEvents()).hint;
+}
+
+// Convenience: the numeric per-clip floor to send as `min_duration` (null when
+// there is no duration signal).
+export function tasteMinDuration() {
+  return tasteSignal(loadTasteEvents()).minDuration;
 }

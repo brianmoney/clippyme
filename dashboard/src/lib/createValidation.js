@@ -31,6 +31,17 @@ function validateFile(file) {
   return null;
 }
 
+// Server-side files aren't validated client-side (we can't stat them). Only
+// require a non-blank absolute path — the backend's LOCAL_INPUT_DIR allow-list
+// does the authoritative check when the job is submitted.
+function validateLocalPath(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Enter the path to a file on the server.';
+  if (!raw.startsWith('/')) return 'The server path must be absolute (start with /).';
+  if (!VIDEO_EXTENSIONS.test(raw)) return 'The server path must point to a supported video file.';
+  return null;
+}
+
 export function validateCreateOptions(opts = {}) {
   const errors = [];
   const mode = opts.mode === 'batch' ? 'batch' : 'single';
@@ -41,6 +52,9 @@ export function validateCreateOptions(opts = {}) {
     sourceCount = 1;
     if (opts.source === 'file') {
       const error = validateFile(opts.file);
+      if (error) errors.push(error);
+    } else if (opts.source === 'local') {
+      const error = validateLocalPath(opts.localPath);
       if (error) errors.push(error);
     } else {
       const error = validateUrl(opts.url);

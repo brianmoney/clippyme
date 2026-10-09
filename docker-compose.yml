@@ -65,6 +65,9 @@ services:
       # Whisper fallback diarization. Requires ENABLE_WHISPER_DIARIZE=1
       # at build time AND HF_TOKEN set at runtime.
       - WHISPER_DIARIZE=${WHISPER_DIARIZE:-true}
+      # Pin the Faster-Whisper model size (tiny|base|small|medium|large-v3).
+      # Empty = hardware auto-select (large-v3/medium/small by VRAM, else by RAM).
+      - WHISPER_MODEL=${WHISPER_MODEL:-}
       # Gemini key is normally passed per-request via the X-Gemini-Key
       # header, but can also be set here for CLI runs that shell into the
       # container directly.
@@ -137,10 +140,20 @@ services:
       # localhost-only when unset; add your LAN address(es) when the dashboard
       # is exposed beyond loopback (CLIPPYME_BIND=0.0.0.0).
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      # Server-file (local_path) submissions must live under this root. The
+      # default /app/videos maps to the bind-mounted repo (./videos on the
+      # host). To clip over NFS, mount the share into ./videos on the host, or
+      # add a bind mount here and point LOCAL_INPUT_DIR at it.
+      - LOCAL_INPUT_DIR=${LOCAL_INPUT_DIR:-/app/videos}
     volumes:
       - .:/app
       - /app/__pycache__
       - ./data:/app/data
+    # NFS example — uncomment and adjust to expose a shared drive for the
+    # "Server file" source (submit paths under the mounted dir):
+    #   - /mnt/Synology-Documents:/app/nfs
+    #   - LOCAL_INPUT_DIR=/app/nfs   (see docker-compose.override.yml for the
+    #                                 working local copy of this mount)
     networks:
       - clippyme-net
     restart: unless-stopped

@@ -22,6 +22,49 @@ def test_process_language_is_normalized_and_allowlisted():
         ProcessRequest(url="https://upload.invalid/local", language="../../bad")
 
 
+def test_process_local_path_is_realpathed_inside_allowlist(tmp_path, monkeypatch):
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    target = videos / "clip.mp4"
+    target.write_bytes(b"x")
+    monkeypatch.setenv("LOCAL_INPUT_DIR", str(videos))
+    request = ProcessRequest(local_path=str(target))
+    # The validator returns the realpath of the input.
+    assert request.local_path == str(target.resolve())
+
+
+def test_process_rejects_url_and_local_path_together(tmp_path, monkeypatch):
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    target = videos / "clip.mp4"
+    target.write_bytes(b"x")
+    monkeypatch.setenv("LOCAL_INPUT_DIR", str(videos))
+    with pytest.raises(ValidationError, match="not both"):
+        ProcessRequest(
+            url="https://www.youtube.com/watch?v=abc",
+            local_path=str(target),
+        )
+
+
+def test_process_rejects_local_path_outside_allowlist(tmp_path, monkeypatch):
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    outside = tmp_path / "other"
+    outside.mkdir()
+    target = outside / "clip.mp4"
+    target.write_bytes(b"x")
+    monkeypatch.setenv("LOCAL_INPUT_DIR", str(videos))
+    with pytest.raises(ValidationError, match="inside"):
+        ProcessRequest(local_path=str(target))
+
+
+def test_process_accepts_local_path_without_url():
+    # Neither source present is legal at the schema level; the route enforces
+    # the "must provide one" rule after validation.
+    request = ProcessRequest()
+    assert request.url is None and request.local_path is None
+
+
 def test_batch_rejects_all_blank_urls_after_cleaning():
     with pytest.raises(ValidationError):
         BatchRequest(urls=["", "   "])

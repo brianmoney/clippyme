@@ -20,11 +20,11 @@ const BASE_OPTS = {
   hooks: false, logo: true, gradePreset: 'none',
 };
 
-function mount(optsOver = {}) {
+function mount(optsOver = {}, viewOver = {}) {
   const set = vi.fn();
   render(<CreateView opts={{ ...BASE_OPTS, ...optsOver }} set={set}
     onPickPreset={vi.fn()} onCreate={vi.fn()} presets={[]} defaultId={null}
-    onSetDefault={vi.fn()} onDelete={vi.fn()} onSaveCurrent={vi.fn()} />);
+    onSetDefault={vi.fn()} onDelete={vi.fn()} onSaveCurrent={vi.fn()} {...viewOver} />);
   return set;
 }
 
@@ -78,6 +78,18 @@ test('logo drawer: position cell and size segment patch logoPos/logoSize', () =>
   expect(set).toHaveBeenLastCalledWith({ logoPos: 'bottom-center' });
   fireEvent.click(screen.getByRole('button', { name: 'L' }));
   expect(set).toHaveBeenLastCalledWith({ logoSize: 'L' });
+});
+
+test('server source placeholder reflects the backend LOCAL_INPUT_DIR', () => {
+  mount({ source: 'local' }, { localInputDir: '/app/nfs' });
+  const field = screen.getByLabelText('Server-side file path');
+  expect(field.placeholder).toBe('/app/nfs/recording.mp4');
+  expect(screen.getByText('/app/nfs')).toBeTruthy();
+});
+
+test('server source placeholder falls back to the docker default when offline', () => {
+  mount({ source: 'local' });
+  expect(screen.getByLabelText('Server-side file path').placeholder).toBe('/app/videos/recording.mp4');
 });
 
 test('grade row: preset segments (with the extra Off entry) patch gradePreset', () => {

@@ -114,7 +114,6 @@ test('logo tab: enable + reposition → logoParams and toggle ride the payload',
 });
 
 // --- grade tab ---------------------------------------------------------------------
-
 test('grade tab: switch on defaults to warm_cinematic, preset click refines it', () => {
   const { onApply } = mount();
   fireEvent.click(tab('Grade'));
@@ -134,6 +133,36 @@ test('grade switch off maps back to preset none and toggle false', () => {
   const p = onApply.mock.calls[0][0];
   expect(p.toggles.grade).toBe(false);
   expect(p.gradeParams).toEqual({ preset: 'none' });
+});
+
+// --- top text tab -------------------------------------------------------------
+
+test('top banner tab: enable + text → topTextParams and toptext toggle ride the payload', () => {
+  const { onApply } = mount();
+  fireEvent.click(tab('Top banner'));
+  fireEvent.click(screen.getByRole('switch'));            // top text on
+  fireEvent.change(screen.getByRole('textbox', { name: 'Top banner text' }),
+    { target: { value: 'St. Johns BOCC' } });
+  fireEvent.click(applyBtn());
+  const p = onApply.mock.calls[0][0];
+  expect(p.toggles.toptext).toBe(true);
+  expect(p.topTextParams).toMatchObject({
+    enabled: true, text: 'St. Johns BOCC', size: 'M', text_color: '#FFFFFF',
+    bg_enabled: true, bg_color: '#000000', bg_opacity: 0.55,
+  });
+});
+
+test('top banner tab: disabling the strip keeps text but bg_enabled false', () => {
+  const { onApply } = mount();
+  fireEvent.click(tab('Top banner'));
+  fireEvent.click(screen.getByRole('switch'));            // top text on
+  fireEvent.change(screen.getByRole('textbox', { name: 'Top banner text' }),
+    { target: { value: 'SB 686' } });
+  fireEvent.click(screen.getAllByRole('switch')[1]);      // strip off
+  fireEvent.click(applyBtn());
+  const p = onApply.mock.calls[0][0];
+  expect(p.topTextParams.bg_enabled).toBe(false);
+  expect(p.topTextParams.text).toBe('SB 686');
 });
 
 // --- 2. manual trim forces smartcut --------------------------------------------

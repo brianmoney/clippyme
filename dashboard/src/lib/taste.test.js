@@ -9,8 +9,10 @@ globalThis.localStorage = {
   removeItem: (k) => store.delete(k),
 };
 
-const { summarizeTaste, loadTasteEvents, recordTasteEvent, tasteInstructionSuffix } =
-  await import('./taste.js');
+const {
+  summarizeTaste, tasteSignal, loadTasteEvents, recordTasteEvent,
+  tasteInstructionSuffix, tasteMinDuration,
+} = await import('./taste.js');
 
 test('summarizeTaste returns empty below the signal threshold', () => {
   assert.equal(summarizeTaste([]), '');
@@ -34,6 +36,17 @@ test('summarizeTaste flags a discard score band when kept >> discarded', () => {
 test('summarizeTaste ignores invalid actions', () => {
   const evs = Array.from({ length: 10 }, () => ({ a: 'bogus', d: 20, s: 80 }));
   assert.equal(summarizeTaste(evs), '');
+});
+
+test('tasteSignal pairs a >60s length hint with a min_duration floor', () => {
+  const evs = Array.from({ length: 8 }, () => ({ a: 'kept', d: 98, s: 85 }));
+  const sig = tasteSignal(evs);
+  assert.match(sig.hint, /92-104s/);
+  assert.equal(sig.minDuration, 92, 'the hint alone cannot exceed the 60s window');
+});
+
+test('tasteSignal has no floor below the signal threshold', () => {
+  assert.deepEqual(tasteSignal([]), { hint: '', minDuration: null });
 });
 
 // --- localStorage-backed exports (shimmed above) ----------------------------
@@ -75,4 +88,12 @@ test('tasteInstructionSuffix distils stored events into a hint', () => {
     recordTasteEvent({ viralScore: 85, duration: 20, action: 'kept' });
   }
   assert.match(tasteInstructionSuffix(), /14-26s/);
+});
+
+test('tasteMinDuration exposes the stored duration floor', () => {
+  store.clear();
+  for (let i = 0; i < 8; i++) {
+    recordTasteEvent({ viralScore: 85, duration: 98, action: 'kept' });
+  }
+  assert.equal(tasteMinDuration(), 92);
 });

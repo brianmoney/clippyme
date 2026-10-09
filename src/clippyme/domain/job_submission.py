@@ -42,6 +42,7 @@ async def submit_job(
     on_change=None,
     cleanup_paths=(),
     input_path: str | None = None,
+    keep_input: bool = False,
 ) -> None:
     """Register and enqueue a job, rolling every artefact back on queue-full."""
     max_attempts = configured_max_attempts()
@@ -61,6 +62,9 @@ async def submit_job(
         "env": env,
         "output_dir": job_output_dir,
         "input_path": input_path,
+        # True for server-local sources: the file is not ours to delete, so no
+        # lifecycle step (cancel/delete/retention) may remove it.
+        "keep_input": bool(keep_input),
         "result": {"clips": [], **runtime_result_fields(job_output_dir)},
         "attempt": 0,
         "max_attempts": max_attempts,

@@ -13,6 +13,14 @@ name: clippyme
 
 services:
   backend:
+    # Force the NVIDIA runtime on EVERY start, not just at creation. The
+    # `deploy` device reservation below only builds the GPU device cgroup
+    # allowlist when the nvidia OCI hook runs (container creation); a plain
+    # `docker start` of an existing container otherwise rebuilds the cgroup
+    # with runc and the container keeps /dev/nvidia* but gets EPERM opening
+    # them — NVML/CUDA then fail and the pipeline silently falls back to CPU
+    # Whisper after a host reboot/driver reload. See README "NVIDIA GPU profile".
+    runtime: nvidia
     build:
       args:
         GPU_RUNTIME: nvidia

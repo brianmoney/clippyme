@@ -7,7 +7,7 @@ import { Icon, Social, Btn, Switch, Stepper, PlatPill, PLATFORMS } from './primi
 import { LazyVideo } from './LazyVideo';
 import { clipVideoSrc } from './realApi';
 import { publishClip, getZernio } from './realApi';
-import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams } from '../lib/seedClipParams';
+import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams, seedTopTextParams } from '../lib/seedClipParams';
 import { localDatePlus } from '../lib/scheduleDates';
 import { useModalA11y } from './useModalA11y';
 
@@ -148,6 +148,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
     const logoParams = cs.logoParams ?? seedLogoParams(preselections);
     const gradeParams = cs.gradeParams ?? { preset: preselections?.grade?.preset || 'none' };
     const bannerParams = cs.bannerParams ?? seedBannerParams(preselections);
+    const topTextParams = cs.topTextParams ?? seedTopTextParams(preselections);
     const title = (clip.video_title_for_youtube_short || `Clip ${idx + 1}`).slice(0, 100);
     return {
       title,
@@ -161,7 +162,7 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
         privacy_level: 'PUBLIC_TO_EVERYONE', allow_comment: true, allow_duet: true,
         allow_stitch: true, content_preview_confirmed: true, express_consent_given: true,
       } : undefined,
-      ...(any ? { compose_first: true, toggles, hook_params: toggles.hook ? hookParams : {}, subtitle_params: toggles.subtitles ? subtitleParams : {}, logo_params: toggles.logo ? logoParams : {}, grade_params: toggles.grade ? gradeParams : {}, banner_params: toggles.banner ? bannerParams : {}, drop_ranges: toggles.smartcut ? (cs.dropRanges || []) : [] } : {}),
+      ...(any ? { compose_first: true, toggles, hook_params: toggles.hook ? hookParams : {}, subtitle_params: toggles.subtitles ? subtitleParams : {}, logo_params: toggles.logo ? logoParams : {}, grade_params: toggles.grade ? gradeParams : {}, banner_params: toggles.banner ? bannerParams : {}, top_text_params: toggles.toptext ? topTextParams : {}, drop_ranges: toggles.smartcut ? (cs.dropRanges || []) : [] } : {}),
     };
   };
 

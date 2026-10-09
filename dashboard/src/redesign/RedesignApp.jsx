@@ -14,9 +14,9 @@ import { PublishModal } from './publish';
 import { HistoryView, SettingsView, ApiKeyModal } from './views';
 import { LiveMonitorView } from './live';
 import { EditClipModal } from './captions';
-import { optsToPreselections, restoreJob, listBackendJobIds, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip } from './realApi';
+import { optsToPreselections, restoreJob, listBackendJobIds, fetchBackendHistory, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip } from './realApi';
 import { allPresets, getDefaultPresetOpts, getDefaultPresetId, saveUserPreset, deleteUserPreset, setDefaultPreset } from './presets';
-import { HOOK_STYLE_DEFAULT } from './data';
+import { HOOK_STYLE_DEFAULT, TOP_TEXT_DEFAULT } from './data';
 import { clipStateToParams, buildBulkPlan } from '../lib/bulkApply';
 import { runApplyEdit } from '../lib/applyEdit';
 
@@ -29,7 +29,7 @@ import { useBackendStatus } from '../hooks/useBackendStatus';
 import { useSessionPersistence, loadPersistedSession, clearPersistedSession } from '../hooks/useSessionPersistence';
 
 const DEFAULT_OPTS = {
-  mode: 'single', source: 'url', url: '', file: null, fileName: '', batch: '', batchFiles: [], instructions: '',
+  mode: 'single', source: 'url', url: '', localPath: '', file: null, fileName: '', batch: '', batchFiles: [], instructions: '',
   clipsAuto: true, clips: 7, aspect: '9:16',
   detect: true, reframeMode: 'auto', letterboxZoom: 0, smartcut: true, zoom: true, model: '',
   minDuration: 0,
@@ -41,6 +41,7 @@ const DEFAULT_OPTS = {
   hooks: true, hookPos: 'top', hookSize: 'M', hookStyle: { ...HOOK_STYLE_DEFAULT },
   logo: false, logoPos: 'top-right', logoSize: 'M', gradePreset: 'none',
   banner: false, bannerPlatform: 'kick', bannerHandle: '', bannerYPct: 0.85,
+  topText: false, topTextStyle: { ...TOP_TEXT_DEFAULT },
   language: 'multi',
   platforms: { tiktok: true, ig: true, yt: false },
   preset: 'viral',
@@ -123,8 +124,8 @@ export default function RedesignApp() {
   // reality so jobs wiped by a rebuild are flagged instead of dead-clicking.
   const [availableJobIds, setAvailableJobIds] = useState(null);
 
-  const { history, saveToHistory, deleteFromHistory } = useHistory();
-  const { cookiesConfigured, setCookiesConfigured } = useBackendStatus();
+  const { history, saveToHistory, seedFromBackend, deleteFromHistory } = useHistory();
+  const { cookiesConfigured, setCookiesConfigured, localInputDir } = useBackendStatus();
   const { states: clipStates, updateClip: updateClipState } = useClipStates(jobId);
 
   // Cross-job taste memory (#8): record a kept/discarded signal as the user
@@ -145,10 +146,15 @@ export default function RedesignApp() {
   useEffect(() => { if (apiKey) localStorage.setItem('gemini_key', apiKey); }, [apiKey]);
   // Refresh the on-disk job set whenever the History tab opens, so a job whose
   // files were removed (rebuild/cleanup) shows as unavailable rather than
-  // failing silently when clicked.
+  // failing silently when clicked. Also seed the localStorage list from the
+  // backend scan so on-disk jobs are openable even in a browser/profile that
+  // never ran them.
   useEffect(() => {
-    if (tab === 'history' && !viewingHistory) listBackendJobIds().then(setAvailableJobIds);
-  }, [tab, viewingHistory]);
+    if (tab === 'history' && !viewingHistory) {
+      listBackendJobIds().then(setAvailableJobIds);
+      fetchBackendHistory().then(seedFromBackend);
+    }
+  }, [tab, viewingHistory, seedFromBackend]);
   useSessionPersistence({ status, jobId, results, processingMedia, activeTab: tab, preselections });
 
   // A bare page reload resumes straight from the localStorage session
@@ -271,7 +277,11 @@ export default function RedesignApp() {
         jobId,
         status: 'complete',
         timestamp: Date.now(),
-        source: processingMedia?.type === 'url' ? processingMedia.payload : processingMedia?.payload?.name || 'Local file',
+        source: processingMedia?.type === 'url'
+          ? processingMedia.payload
+          : processingMedia?.type === 'local'
+            ? processingMedia.payload
+            : processingMedia?.payload?.name || 'Local file',
         sourceType: processingMedia?.type || 'file',
         clipCount: data.result?.clips?.length || 0,
         cost: data.result?.cost_analysis?.total_cost || null,
@@ -287,7 +297,11 @@ export default function RedesignApp() {
         jobId,
         status: 'stopped',
         timestamp: Date.now(),
-        source: processingMedia?.type === 'url' ? processingMedia.payload : processingMedia?.payload?.name || 'Local file',
+        source: processingMedia?.type === 'url'
+          ? processingMedia.payload
+          : processingMedia?.type === 'local'
+            ? processingMedia.payload
+            : processingMedia?.payload?.name || 'Local file',
         sourceType: processingMedia?.type || 'file',
         clipCount: data.result?.clips?.length || 0,
         cost: data.result?.cost_analysis?.total_cost || null,
@@ -325,6 +339,9 @@ export default function RedesignApp() {
       if (opts.source === 'url') {
         if (!opts.url.trim()) return;
         handleProcess({ type: 'url', payload: opts.url.trim(), instructions, preselections: pre });
+      } else if (opts.source === 'local') {
+        if (!opts.localPath.trim()) return;
+        handleProcess({ type: 'local', payload: opts.localPath.trim(), instructions, preselections: pre });
       } else {
         if (!opts.file) return;
         handleProcess({ type: 'file', payload: opts.file, instructions, preselections: pre });
@@ -445,6 +462,7 @@ export default function RedesignApp() {
       logoParams: params.logoParams,
       gradeParams: params.gradeParams,
       bannerParams: params.bannerParams,
+      topTextParams: params.topTextParams,
     };
     const plan = buildBulkPlan(srcParams, targets, clipStates);
     if (!plan.length) return;
@@ -459,7 +477,7 @@ export default function RedesignApp() {
 
       {tab === 'create' && status === 'idle' && (
         <CreateView opts={opts} set={set} onPickPreset={pickPreset} onCreate={startJob}
-          presets={presetList} defaultId={defaultPresetId}
+          presets={presetList} defaultId={defaultPresetId} localInputDir={localInputDir}
           onSaveCurrent={onSaveCurrentPreset} onSetDefault={onSetDefaultPreset} onDelete={onDeletePreset} />
       )}
       {tab === 'create' && (status === 'processing' || status === 'error') && (

@@ -260,3 +260,89 @@ def test_banner_skipped_when_handle_unresolvable(tmp_path, monkeypatch):
     # return path.
     assert "banner" not in order
     assert result == "composed_clip_0.mp4"
+
+
+# --- top-text layer plumbing -----------------------------------------------
+
+def _install_top_text_stub(monkeypatch, order):
+    async def fake_top_text(current_input, job_dir, clip_index, top_text_params,
+                            intermediate_files):
+        order.append("toptext")
+        order.append(("top_text_params", dict(top_text_params)))
+        out = os.path.join(job_dir, f"composed_toptext_{clip_index}.mp4")
+        _touch(out)
+        intermediate_files.append(out)
+        return out
+
+    monkeypatch.setattr(compose, "_apply_top_text", fake_top_text)
+
+
+def _run_compose_top_text(tmp_path, *, toggles, top_text_params):
+    base_clip = _touch(str(tmp_path / "clip_0.mp4"))
+    return asyncio.run(
+        compose_layers(
+            base_clip=base_clip,
+            job_dir=str(tmp_path),
+            clip_index=0,
+            metadata={"transcript": {}},
+            clip_info={"start": 0, "end": 30},
+            toggles=toggles,
+            hook_params={"text": "Watch this", "position": "top", "size": "M"},
+            subtitle_params={"mode": "karaoke"},
+            top_text_params=top_text_params,
+        )
+    )
+
+
+def test_top_text_runs_before_banner_after_logo(tmp_path, monkeypatch):
+    order = []
+    _install_recording_stubs(monkeypatch, order)
+    _install_banner_stub(monkeypatch, order)
+    _install_top_text_stub(monkeypatch, order)
+    base_clip = _touch(str(tmp_path / "clip_0.mp4"))
+    asyncio.run(
+        compose_layers(
+            base_clip=base_clip,
+            job_dir=str(tmp_path),
+            clip_index=0,
+            metadata={"transcript": {}},
+            clip_info={"start": 0, "end": 30},
+            toggles={"hook": True, "banner": True, "toptext": True},
+            hook_params={"text": "Watch this", "position": "top", "size": "M"},
+            subtitle_params={"mode": "karaoke"},
+            banner_params={"enabled": True, "platform": "kick", "handle": "grenbaud"},
+            top_text_params={"enabled": True, "text": "BOCC Public comments", "size": "M"},
+        )
+    )
+    steps = [o for o in order if isinstance(o, str)]
+    assert steps == ["hook", "toptext", "banner"]
+
+
+def test_top_text_enabled_via_params_only(tmp_path, monkeypatch):
+    # enabled + text live in top_text_params (frontend convention) with no
+    # toggles entry — compose must still run the layer (no empty short-circuit).
+    order = []
+    _install_recording_stubs(monkeypatch, order)
+    _install_top_text_stub(monkeypatch, order)
+    result = _run_compose_top_text(
+        tmp_path,
+        toggles={},
+        top_text_params={"enabled": True, "text": "SB 686", "size": "L"},
+    )
+    assert "toptext" in order
+    params = [o for o in order if isinstance(o, tuple)][0][1]
+    assert params["text"] == "SB 686"
+    assert result == "composed_clip_0.mp4"
+
+
+def test_top_text_toggle_on_but_empty_text_skipped(tmp_path, monkeypatch):
+    order = []
+    _install_recording_stubs(monkeypatch, order)
+    _install_top_text_stub(monkeypatch, order)
+    result = _run_compose_top_text(
+        tmp_path,
+        toggles={"toptext": True},
+        top_text_params={"enabled": True, "text": "   "},
+    )
+    assert "toptext" not in order
+    assert result == "composed_clip_0.mp4"

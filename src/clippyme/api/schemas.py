@@ -8,9 +8,11 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from clippyme.domain.job_results import ALLOWED_LANGUAGES, GEMINI_MODEL_RE, MAX_INSTRUCTIONS_LEN
+from clippyme.domain.errors import ValidationError as ClippyMeValidationError
+from clippyme.domain.local_input import validate_local_path
 from clippyme.netutil import resolve_host_addresses
 from clippyme.schemas import ViralClip, ViralClipsResponse  # noqa: F401
 
@@ -82,6 +84,50 @@ def _validate_timezone(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+_VALID_YOUTUBE_VISIBILITY = {"public", "private", "unlisted"}
+YOUTUBE_CATEGORY_IDS = {
+    "22": "People & Blogs",
+    "1": "Film & Animation",
+    "2": "Autos & Vehicles",
+    "10": "Music",
+    "15": "Pets & Animals",
+    "17": "Sports",
+    "20": "Gaming",
+    "23": "Comedy",
+    "24": "Entertainment",
+    "25": "News & Politics",
+    "26": "Howto & Style",
+    "27": "Education",
+    "28": "Science & Technology",
+    "29": "Nonprofits & Activism",
+}
+
+
+def _validate_youtube_defaults(value):
+    if value is None:
+        return value
+    if not isinstance(value, dict):
+        raise ValueError("youtube defaults must be an object")
+    allowed = {"category_id", "made_for_kids", "contains_synthetic_media", "visibility"}
+    extra = set(value) - allowed
+    if extra:
+        raise ValueError(f"unknown youtube default: {sorted(extra)}")
+    if value.get("category_id") is not None:
+        category_id = value["category_id"]
+        if not isinstance(category_id, str) or not category_id.isdigit():
+            raise ValueError("category_id must be a numeric string")
+        if len(category_id) > 8:
+            raise ValueError("category_id too long")
+    for key in ("made_for_kids", "contains_synthetic_media"):
+        if value.get(key) is not None and not isinstance(value[key], bool):
+            raise ValueError(f"{key} must be a boolean")
+    if value.get("visibility") is not None and value["visibility"] not in _VALID_YOUTUBE_VISIBILITY:
+        raise ValueError(
+            f"visibility must be one of {sorted(_VALID_YOUTUBE_VISIBILITY)}"
+        )
+    return value
+
+
 def _validate_zernio_accounts(value):
     if value is None:
         return value
@@ -103,7 +149,11 @@ def _validate_zernio_accounts(value):
 
 
 class ProcessRequest(BaseModel):
-    url: str = Field(..., max_length=2048)
+    url: Optional[str] = Field(None, max_length=2048)
+    # Absolute path to a video already present on the backend's filesystem
+    # (e.g. an NFS mount under LOCAL_INPUT_DIR). Submits the file in place —
+    # no HTTP upload — and the pipeline reads it directly.
+    local_path: Optional[str] = Field(None, max_length=4096)
     instructions: Optional[str] = Field(None, max_length=MAX_INSTRUCTIONS_LEN)
     reframe_mode: Optional[str] = Field(None, pattern=r"^(auto|disabled|subject|object)$")
     # Fixed zoom for the letterbox render. 0 (default) = whole frame between
@@ -122,15 +172,35 @@ class ProcessRequest(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def _validate_url(cls, value: str) -> str:
+    def _validate_url(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return value
         if value == "https://upload.invalid/local":
             return value
         return validate_public_url(value)
+
+    @field_validator("local_path")
+    @classmethod
+    def _validate_local_path(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            return validate_local_path(value)
+        except ClippyMeValidationError as exc:
+            raise ValueError(exc.detail)
 
     @field_validator("language")
     @classmethod
     def _bound_language(cls, value: Optional[str]) -> Optional[str]:
         return _validate_language(value)
+
+    @model_validator(mode="after")
+    def _one_source_only(self):
+        has_url = bool((self.url or "").strip())
+        has_local = bool(self.local_path)
+        if has_url and has_local:
+            raise ValueError("provide either url or local_path, not both")
+        return self
 
 
 class BatchRequest(BaseModel):
@@ -265,7 +335,7 @@ def _validate_drop_ranges(value):
     return value
 
 
-_ALLOWED_TOGGLES = frozenset({"smartcut", "hook", "subtitles", "logo", "grade", "banner"})
+_ALLOWED_TOGGLES = frozenset({"smartcut", "hook", "subtitles", "logo", "grade", "banner", "toptext"})
 
 
 def _validate_toggles(value):
@@ -309,6 +379,7 @@ class ComposeRequest(BaseModel):
     logo_params: dict = Field(default_factory=dict)
     grade_params: dict = Field(default_factory=dict)
     banner_params: dict = Field(default_factory=dict)
+    top_text_params: dict = Field(default_factory=dict)
     drop_ranges: list = Field(default_factory=list)
 
     @field_validator("toggles")
@@ -317,7 +388,8 @@ class ComposeRequest(BaseModel):
         return _validate_toggles(value)
 
     @field_validator(
-        "hook_params", "subtitle_params", "logo_params", "grade_params", "banner_params"
+        "hook_params", "subtitle_params", "logo_params", "grade_params",
+        "banner_params", "top_text_params"
     )
     @classmethod
     def _bound_overlay(cls, value):
@@ -404,6 +476,7 @@ class PublishRequest(BaseModel):
     logo_params: Optional[dict] = None
     grade_params: Optional[dict] = None
     banner_params: Optional[dict] = None
+    top_text_params: Optional[dict] = None
     drop_ranges: Optional[list] = None
 
     @field_validator("timezone")
@@ -428,7 +501,8 @@ class PublishRequest(BaseModel):
         return _validate_toggles(value)
 
     @field_validator(
-        "hook_params", "subtitle_params", "logo_params", "grade_params", "banner_params"
+        "hook_params", "subtitle_params", "logo_params", "grade_params",
+        "banner_params", "top_text_params"
     )
     @classmethod
     def _bound_overlay(cls, value):
@@ -538,6 +612,7 @@ class ZernioProfileRequest(BaseModel):
     is_default: bool = False
     accounts: Optional[dict] = None
     timezone: Optional[str] = Field(None, max_length=64)
+    youtube: Optional[dict] = None
 
     @field_validator("timezone")
     @classmethod
@@ -548,6 +623,11 @@ class ZernioProfileRequest(BaseModel):
     @classmethod
     def _validate_accounts(cls, value):
         return _validate_zernio_accounts(value)
+
+    @field_validator("youtube")
+    @classmethod
+    def _validate_yt(cls, value):
+        return _validate_youtube_defaults(value)
 
 
 class ZernioConfigRequest(BaseModel):

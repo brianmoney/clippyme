@@ -28,7 +28,84 @@ VALID_CONFIG_KEYS = (
 ZERNIO_CONFIG_NAMESPACE = "zernio"
 ZERNIO_DEFAULT_TIMEZONE = os.environ.get("ZERNIO_DEFAULT_TZ", "America/New_York")
 ZERNIO_MAX_PROFILES = 16
+ZERNIO_DEFAULT_YOUTUBE = {
+    "category_id": "22",          # People & Blogs — YouTube's own default
+    "made_for_kids": False,       # COPPA flag
+    "contains_synthetic_media": False,  # AI-generated content disclosure
+    "visibility": "public",       # public | private | unlisted
+}
+_VALID_YOUTUBE_VISIBILITY = {"public", "private", "unlisted"}
+YOUTUBE_CATEGORY_IDS = {
+    # Common YouTube category ids for the Settings dropdown. The numeric id is
+    # what Zernio/YouTube expects (default 22 = People & Blogs).
+    "22": "People & Blogs",
+    "1": "Film & Animation",
+    "2": "Autos & Vehicles",
+    "10": "Music",
+    "15": "Pets & Animals",
+    "17": "Sports",
+    "20": "Gaming",
+    "23": "Comedy",
+    "24": "Entertainment",
+    "25": "News & Politics",
+    "26": "Howto & Style",
+    "27": "Education",
+    "28": "Science & Technology",
+    "29": "Nonprofits & Activism",
+}
 _CONFIG_LOCK = threading.RLock()
+
+
+def _normalize_youtube_defaults(value) -> dict:
+    """Coerce a profile's ``youtube`` defaults dict to known keys (read side).
+
+    Unknown keys are dropped; missing fields get sensible defaults so older
+    stored configs (without a ``youtube`` block) still yield a valid publish
+    payload. Values remain unvalidated here — writers go through
+    :func:`_validate_youtube_defaults_for_save`.
+    """
+    if not isinstance(value, dict):
+        return dict(ZERNIO_DEFAULT_YOUTUBE)
+    out = dict(ZERNIO_DEFAULT_YOUTUBE)
+    category_id = value.get("category_id")
+    if isinstance(category_id, str) and category_id.isdigit():
+        out["category_id"] = category_id[:8]
+    for key in ("made_for_kids", "contains_synthetic_media"):
+        if isinstance(value.get(key), bool):
+            out[key] = value[key]
+    visibility = value.get("visibility")
+    if visibility in _VALID_YOUTUBE_VISIBILITY:
+        out["visibility"] = visibility
+    return out
+
+
+def _validate_youtube_defaults_for_save(value) -> dict | None:
+    """Validate an incoming youtube-defaults dict, or ``None`` on invalid input."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    allowed = {"category_id", "made_for_kids", "contains_synthetic_media", "visibility"}
+    if set(value) - allowed:
+        return None
+    category_id = value.get("category_id")
+    if category_id is not None:
+        if not isinstance(category_id, str) or not category_id.isdigit():
+            return None
+        if len(category_id) > 8:
+            return None
+        out["category_id"] = category_id
+    for key in ("made_for_kids", "contains_synthetic_media"):
+        if value.get(key) is not None:
+            if not isinstance(value[key], bool):
+                return None
+            out[key] = value[key]
+    if value.get("visibility") is not None:
+        if value["visibility"] not in _VALID_YOUTUBE_VISIBILITY:
+            return None
+        out["visibility"] = value["visibility"]
+    return out
 
 
 def _read_raw_config() -> dict:
@@ -117,6 +194,7 @@ def _normalize_profiles(raw) -> list:
             "is_default": bool(entry.get("is_default")),
             "accounts": entry.get("accounts") if isinstance(entry.get("accounts"), dict) else {},
             "timezone": entry.get("timezone") or ZERNIO_DEFAULT_TIMEZONE,
+            "youtube": _normalize_youtube_defaults(entry.get("youtube")),
         }
         if profile["id"] and profile["name"]:
             profiles.append(profile)
@@ -162,6 +240,7 @@ def load_zernio_config() -> dict:
             "is_default": True,
             "accounts": legacy["accounts"],
             "timezone": legacy["timezone"],
+            "youtube": dict(ZERNIO_DEFAULT_YOUTUBE),
         }]
     default_profile = next(
         (p for p in profiles if p.get("is_default")),
@@ -230,6 +309,9 @@ def _validate_profiles_for_save(profiles, existing_by_id: dict):
             return None
         if is_default:
             default_seen = True
+        youtube = _validate_youtube_defaults_for_save(entry.get("youtube"))
+        if entry.get("youtube") is not None and youtube is None:
+            return None
         cleaned.append({
             "id": pid,
             "name": name,
@@ -237,6 +319,7 @@ def _validate_profiles_for_save(profiles, existing_by_id: dict):
             "is_default": is_default,
             "accounts": accounts if isinstance(accounts, dict) else {},
             "timezone": entry.get("timezone") or ZERNIO_DEFAULT_TIMEZONE,
+            "youtube": youtube if youtube is not None else dict(ZERNIO_DEFAULT_YOUTUBE),
         })
     return cleaned
 
@@ -268,6 +351,7 @@ def save_zernio_config(api_key: str = None, accounts: dict = None, timezone: str
                     "is_default": True,
                     "accounts": current.get("accounts") if isinstance(current.get("accounts"), dict) else {},
                     "timezone": current.get("timezone") or ZERNIO_DEFAULT_TIMEZONE,
+                    "youtube": _normalize_youtube_defaults(current.get("youtube")),
                 }
             cleaned = _validate_profiles_for_save(profiles, existing)
             if cleaned is None:
@@ -317,6 +401,7 @@ def zernio_config_status() -> dict:
             "is_default": bool(profile.get("is_default")),
             "accounts": profile.get("accounts", {}),
             "timezone": profile.get("timezone", ZERNIO_DEFAULT_TIMEZONE),
+            "youtube": profile.get("youtube") or dict(ZERNIO_DEFAULT_YOUTUBE),
         })
     default_key = (default or {}).get("api_key", "")
     return {

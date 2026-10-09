@@ -14,8 +14,15 @@ Three scheduling modes are supported:
 
 Multi-platform: accepts a list of {platform, accountId, platformSpecificData?}
 entries. The platformSpecificData payload is platform-specific (TikTok needs
-privacy_level + consent flags, YouTube needs visibility, etc.) and is passed
-through verbatim to Zernio.
+privacy_level + consent flags, etc.) and is passed through verbatim to
+Zernio. For YouTube, publish_clip enriches each youtube target with the
+per-video fields Zernio requires — the video title, visibility, madeForKids,
+containsSyntheticMedia and categoryId all live inside that target's
+platformSpecificData (the root `title` field is a display-level Post field,
+NOT applied to the uploaded video) — plus a top-level `tags` array derived
+from the caption's hashtags. The category/visibility/madeForKids/
+containsSyntheticMedia defaults come from the caller's `youtube_defaults`
+(per-profile Settings) and fall back to Zernio's stock values.
 
 This module is import-safe with no auto-editor / smartcut deps. Network calls
 only happen when ZernioClient methods are invoked. SmartScheduler is pure
@@ -280,6 +287,7 @@ class ZernioClient:
         publish_now: bool = False,
         tiktok_settings: Optional[dict] = None,
         title: Optional[str] = None,
+        tags: Optional[list[str]] = None,
     ) -> dict:
         """POST /v1/posts — create the post (scheduled or immediate)."""
         body: dict[str, Any] = {
@@ -290,6 +298,8 @@ class ZernioClient:
         }
         if title:
             body["title"] = title
+        if tags:
+            body["tags"] = tags
         if publish_now:
             body["publishNow"] = True
         elif scheduled_for:
@@ -409,6 +419,110 @@ def _validate_platform_targets(platform_targets: list[dict]) -> None:
             raise ValueError(f"platform target {entry.get('platform')} missing 'accountId'")
 
 
+# Zernio's create-post contract for YouTube:
+#   - the VIDEO title/visibility/category live in the youtube target's
+#     `platformSpecificData` — the root `title` is only a display-level Post
+#     field and is NOT applied to the uploaded video (so a bare
+#     {platform, accountId} target yields an untitled upload that YouTube
+#     rejects). Defaults mirror Zernio's own: categoryId "22" (People & Blogs),
+#     visibility "public", madeForKids false.
+#   - keyword `tags` are a TOP-LEVEL post array (each ≤ 100 chars, combined
+#     ≤ 500 chars, de-duplicated) — not a platform-specific field.
+_YOUTUBE_TITLE_MAX = 100
+_YOUTUBE_TAG_MAX = 100
+_YOUTUBE_TAGS_COMBINED_MAX = 500
+_YOUTUBE_DEFAULT_CATEGORY_ID = "22"
+# YouTube keyword tags carry no '#' prefix.
+_HASHTAG_RE = re.compile(r"#([A-Za-z0-9_]+)")
+
+
+def _extract_youtube_tags(content: str) -> list[str]:
+    """Pull unique hashtags from post text as YouTube keyword tags.
+
+    ClippyMe has no authored per-clip "tags" field — the only keyword source
+    is the caption/description, which routinely ends in hashtags (the AI
+    caption helper emits 2-4). Zernio de-dupes anyway, but we keep the list
+    clean, '#'-stripped and within YouTube's per-tag/combined limits so a
+    hashtag-heavy caption can't push the request over the 500-char cap.
+    """
+    tags: list[str] = []
+    for match in _HASHTAG_RE.finditer(content or ""):
+        tag = match.group(1).strip("_").strip().lower()
+        if not tag or len(tag) > _YOUTUBE_TAG_MAX or tag in tags:
+            continue
+        tags.append(tag)
+    kept: list[str] = []
+    total = 0
+    for tag in tags:
+        if total + len(tag) > _YOUTUBE_TAGS_COMBINED_MAX:
+            break
+        total += len(tag)
+        kept.append(tag)
+    return kept
+
+
+_YOUTUBE_SNAKE_TO_CAMEL = {
+    "category_id": "categoryId",
+    "made_for_kids": "madeForKids",
+    "contains_synthetic_media": "containsSyntheticMedia",
+    "visibility": "visibility",
+}
+
+
+def _camel_youtube_defaults(profile_youtube: Optional[dict]) -> dict:
+    """Map a stored profile's snake_case youtube block to Zernio camelCase keys.
+
+    The Settings store keeps pythonic keys (``category_id``, ``made_for_kids``,
+    ``contains_synthetic_media``, ``visibility``); Zernio's
+    ``platformSpecificData`` uses camelCase. Returns only the fields the caller
+    provided so a partial block still falls back to Zernio's own defaults.
+    """
+    if not isinstance(profile_youtube, dict):
+        return {}
+    return {
+        camel: profile_youtube[snake]
+        for snake, camel in _YOUTUBE_SNAKE_TO_CAMEL.items()
+        if snake in profile_youtube and profile_youtube[snake] is not None
+    }
+
+
+def _with_youtube_defaults(
+    platform_targets: list[dict],
+    title: Optional[str],
+    youtube_defaults: Optional[dict] = None,
+) -> list[dict]:
+    """Return platform targets with the YouTube per-video create fields filled.
+
+    Zernio maps the video title/category/visibility from each youtube target's
+    ``platformSpecificData`` (the root ``title`` is not applied to the video),
+    so a bare ``{platform, accountId}`` target uploads a video with no title —
+    which YouTube rejects. The caller's targets are never mutated: each entry
+    is copied, and every ``youtube`` target has its missing per-video fields
+    defaulted from the clip title + sensible public settings. Any
+    ``platformSpecificData`` the caller already supplied wins over defaults.
+
+    ``youtube_defaults`` optionally overrides the stock settings — keys are
+    camelCase and match the Zernio ``platformSpecificData`` schema exactly
+    (``categoryId``, ``madeForKids``, ``containsSyntheticMedia``,
+    ``visibility``). This is how the per-profile Settings defaults reach the
+    publish payload.
+    """
+    defaults = youtube_defaults or {}
+    enriched: list[dict] = []
+    for target in platform_targets or []:
+        entry = dict(target)
+        if entry.get("platform") == "youtube":
+            data = dict(entry.get("platformSpecificData") or {})
+            data.setdefault("title", (title or "").strip()[:_YOUTUBE_TITLE_MAX] or "Untitled Video")
+            data.setdefault("visibility", defaults.get("visibility", "public"))
+            data.setdefault("madeForKids", bool(defaults.get("madeForKids", False)))
+            data.setdefault("categoryId", defaults.get("categoryId") or _YOUTUBE_DEFAULT_CATEGORY_ID)
+            if "containsSyntheticMedia" in defaults:
+                data.setdefault("containsSyntheticMedia", bool(defaults["containsSyntheticMedia"]))
+            entry["platformSpecificData"] = data
+        enriched.append(entry)
+    return enriched
+
 def publish_clip(
     *,
     api_key: str,
@@ -422,6 +536,7 @@ def publish_clip(
     tiktok_settings: Optional[dict] = None,
     scheduler: Optional[SmartScheduler] = None,
     start_date: Optional[str] = None,
+    youtube_defaults: Optional[dict] = None,
 ) -> dict:
     """Publish a single clip via Zernio.
 
@@ -430,12 +545,18 @@ def publish_clip(
         clip_path: absolute path to the .mp4 to upload.
         title: post title (used by YouTube etc.)
         caption: post text/content
-        platform_targets: list of {platform, accountId, platformSpecificData?}
+        platform_targets: list of {platform, accountId, platformSpecificData?}.
+            Any youtube target is enriched with the per-video title/visibility/
+            madeForKids/categoryId defaults before the request is sent.
         schedule_mode: "now" | "auto" | "manual"
         scheduled_for: ISO 8601 timestamp (required when schedule_mode="manual")
         timezone: IANA tz string passed to Zernio
         tiktok_settings: optional root-level TikTok settings (consent, privacy)
         scheduler: optional injected SmartScheduler (testing)
+        youtube_defaults: optional per-profile YouTube upload defaults in
+            camelCase Zernio keys (categoryId, madeForKids,
+            containsSyntheticMedia, visibility). Applied to each youtube target
+            when it doesn't already specify the field.
 
     Returns:
         {
@@ -473,10 +594,23 @@ def publish_clip(
     # want TikTok/IG to show the title instead of being empty. YouTube uses
     # the separate `title` field at the Zernio root, so it's unaffected.
     effective_content = (caption or "").strip() or (title or "").strip()
+    # YouTube reads the video title/category/visibility from each target's
+    # platformSpecificData (the root `title` is not applied to the video).
+    # Fill those defaults centrally so every caller (publish modal, live
+    # monitor auto-publish) posts a titled, categorised video.
+    platform_targets = _with_youtube_defaults(platform_targets, title, youtube_defaults)
+    # YouTube keyword tags are a top-level post array — derive them from the
+    # caption's hashtags (the only authored keyword source ClippyMe has). Only
+    # sent when a YouTube account is targeted (tags are a YouTube concept).
+    tags = (
+        _extract_youtube_tags(effective_content)
+        if any(p.get("platform") == "youtube" for p in platform_targets)
+        else []
+    )
     logger.info(
-        "publish_clip: platforms=%s content_len=%d title_len=%d mode=%s",
+        "publish_clip: platforms=%s content_len=%d title_len=%d mode=%s youtube_tags=%d",
         [p.get("platform") for p in platform_targets],
-        len(effective_content), len(title or ""), schedule_mode,
+        len(effective_content), len(title or ""), schedule_mode, len(tags),
     )
 
     client = ZernioClient(api_key)
@@ -592,6 +726,7 @@ def publish_clip(
                 title=title,
                 media_items=media_items,
                 platforms=platform_targets,
+                tags=tags,
                 scheduled_for=final_scheduled_for,
                 timezone=timezone,
                 publish_now=publish_now,
@@ -605,6 +740,7 @@ def publish_clip(
             title=title,
             media_items=media_items,
             platforms=platform_targets,
+            tags=tags,
             scheduled_for=final_scheduled_for,
             timezone=timezone,
             publish_now=publish_now,

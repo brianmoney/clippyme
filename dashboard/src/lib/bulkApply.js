@@ -12,7 +12,7 @@
 // style, logo params) is shared config and is copied verbatim.
 //
 // Kept dependency-free + pure so it can be host-unit-tested with node:test.
-import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams } from './seedClipParams.js';
+import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams, seedTopTextParams, TOP_TEXT_EXAMPLE } from './seedClipParams.js';
 
 /**
  * Collapse a clip's saved per-clip state (which may be empty if the clip was
@@ -33,6 +33,7 @@ export function clipStateToParams(state, preselections, clip) {
     logoParams: state?.logoParams || seedLogoParams(preselections),
     gradeParams: state?.gradeParams || { preset: preselections?.grade?.preset || 'none' },
     bannerParams: state?.bannerParams || seedBannerParams(preselections),
+    topTextParams: state?.topTextParams || seedTopTextParams(preselections),
   };
 }
 
@@ -78,6 +79,9 @@ export function buildClipParams(srcParams, targetClip, targetState) {
     logoParams: { ...srcParams.logoParams },
     gradeParams: { ...(srcParams.gradeParams || { preset: 'none' }) },
     bannerParams: { ...(srcParams.bannerParams || { enabled: false, platform: 'kick', handle: '', y_pct: 0.85 }) },
+    // Top text is shared series/meeting chrome — copied verbatim (unlike hook
+    // text, which stays per-clip).
+    topTextParams: { ...(srcParams.topTextParams || { enabled: false, text: TOP_TEXT_EXAMPLE, size: 'M', text_color: '#FFFFFF', bg_enabled: true, bg_color: '#000000', bg_opacity: 0.55 }) },
     // Manual trim is never propagated.
     dropRanges: [],
   };

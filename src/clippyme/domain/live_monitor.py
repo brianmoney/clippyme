@@ -564,6 +564,7 @@ class LiveMonitor:
         self._gemini_exhausted_at: str | None = None
         self._gemini_key = None
         self._zernio_key = None
+        self._zernio_youtube_defaults: dict = {}
 
         self.cfg: dict = {}
         self.platform = id.split(":", 1)[0] if ":" in id else ""
@@ -691,9 +692,14 @@ class LiveMonitor:
         self._gemini_key = pc.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not self._gemini_key:
             raise ValidationError("Gemini API key not configured")
-        self._zernio_key = load_zernio_config().get("api_key")
+        zernio_cfg = load_zernio_config()
+        self._zernio_key = zernio_cfg.get("api_key")
         if not self._zernio_key:
             raise ValidationError("Zernio API key not configured")
+        from clippyme.integrations.social_publisher import _camel_youtube_defaults
+        self._zernio_youtube_defaults = _camel_youtube_defaults(
+            (zernio_cfg.get("default_profile") or {}).get("youtube")
+        )
 
         self.cfg = cfg
         self.platform = cfg["platform"]
@@ -1347,6 +1353,7 @@ class LiveMonitor:
                         timezone=self.cfg["timezone"],
                         scheduler=self._scheduler,
                         start_date=start_date,
+                        youtube_defaults=self._zernio_youtube_defaults,
                     )
                     break
                 except (ZernioError, ValueError) as exc:

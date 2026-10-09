@@ -96,6 +96,8 @@ docker compose up --build
 
 Open the dashboard, drop in a YouTube URL or upload a file, and watch the pipeline run live.
 
+**Clipping a file that's already on the server** (e.g. a multi-GB VOD on an NFS share): use the Create tab's **Server** source and enter the file's absolute path under `LOCAL_INPUT_DIR` (default `./videos`, bind-mounted at `/app/videos`). The backend clips it in place — no upload, no size ceiling — and never deletes the source file.
+
 > **First run after a pull** that touches `requirements.txt` or `package.json`: `docker compose down -v && docker compose up --build` to clear the stale anonymous volume on `/app/node_modules`.
 
 ### NVIDIA GPU profile
@@ -103,6 +105,16 @@ Open the dashboard, drop in a YouTube URL or upload a file, and watch the pipeli
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
+
+The backend pins `runtime: nvidia` (in `docker-compose.gpu.yml` and this repo's
+`docker-compose.override.yml`) so **every** start goes through the nvidia OCI
+hook — that hook is what installs the GPU device-cgroup allowlist.
+`deploy.resources.reservations.devices` alone only does it at container
+*creation*, so a container that is merely re-*started* after a host reboot /
+driver reload keeps `/dev/nvidia*` but gets `EPERM` on every `open()`, NVML/CUDA
+fail, and jobs silently transcribe on CPU (~18× slower on the P40). Verify with
+`docker exec clippyme-backend nvidia-smi -L`; if it fails,
+`docker compose up -d --force-recreate backend` fixes it without a rebuild.
 
 ### Production frontend (optional)
 
@@ -175,6 +187,7 @@ Runtime env overrides (rarely needed):
 | `AE_CROSSFADE` | `0.15` | Smart Cut ffmpeg renderer: crossfade (seconds) between consecutive kept segments so pause-removal cuts blend instead of hard-cutting. `0` = hard cuts. |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | _(unset)_ | Helix app creds ([dev.twitch.tv](https://dev.twitch.tv/console/apps)) for the Twitch content monitor. Also settable in Settings. Fallback only if not stored in `data/config.json`. |
 | `MAX_FILE_SIZE_MB` | `16384` | Max local-video upload size in MB (16 GB default — long stream VODs easily exceed the old 2 GB). Raising past 16 GB behind the prod nginx frontend also requires raising `client_max_body_size` in `dashboard/nginx.conf`. |
+| `LOCAL_INPUT_DIR` | `./videos` | Allow-listed root for the Create tab's **Server** source / `local_path` on `POST /api/process`. Point a job at a video already on the backend (e.g. a 6 GB VOD on an NFS mount) and clip it in place — no HTTP upload. The source file is validated to live under this root (realpath-resolved) and is **never** deleted by job cleanup. Defaults to `./videos` in the repo; bind-mount the NFS share into `/app/videos` in compose and submit paths like `/app/videos/vod.mp4`. |
 | `REFRAME_SMOOTHER` | _(blank)_ | `euro` switches the speaker camera to the 1€ adaptive filter; blank keeps the two-speed EMA. |
 | `REFRAME_LOST_HOLD` | `90` | Frames a lost subject is held before the camera drifts back to center (~3 s @ 30 fps). |
 | `REFRAME_LOST_DRIFT` | `0.05` | Per-frame ease rate of the drift-to-center recovery. |
@@ -260,7 +273,7 @@ All routes are JSON in / JSON out. Job IDs are strict UUID4. Config endpoints re
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/process` | Single video (URL or upload). Accepts `reframe_mode`, per-job `model`. |
+| `POST` | `/api/process` | Single video (URL, multipart file, or server-local `local_path`). Accepts `reframe_mode`, per-job `model`. |
 | `POST` | `/api/batch` | Up to 20 URLs in one shot. |
 | `GET` | `/api/status/{job_id}` | Live status + logs + result (clips stream in as they finish). |
 | `POST` | `/api/pause/{job_id}` | Suspend the running job (resume-able). |
@@ -355,6 +368,8 @@ After a job completes, every clip can be flipped between all three modes post-ho
 
 The dashboard's unified `PublishModal` publishes the selected clips concurrently in one click, each row showing live queued → uploading → live/error status. With `auto` it spreads one clip per day from a chosen start date (mirroring the original `tmp/programma_shorts.py` logic) to stay under per-platform daily caps; any residual Zernio daily-limit 429 is surfaced verbatim per clip instead of failing the whole batch.
 
+To clear the published state (re-post elsewhere, or a cancelled schedule left a stale "published" chip), see the [reset-published runbook](docs/reset-published-runbook.md).
+
 ---
 
 ## Live monitor (auto clip & publish)
@@ -379,6 +394,7 @@ This project has been audited; the current state is suitable for **trusted LAN d
 - `_ffmpeg_filter_escape()` covers `\\ : ' , ; [ ]` and is re-applied even on direct internal callers.
 - Subprocess calls use list-form argv with whitelisted `reframe_mode` and bounded `instructions` length, no shell interpolation.
 - Uploaded media files are saved with a server-generated name (extension whitelisted): the client-supplied filename is discarded.
+- Server-local (`local_path`) submissions are restricted to an absolute path whose realpath (symlinks resolved) stays inside `LOCAL_INPUT_DIR` — a file dropped elsewhere on the backend (or a symlink escaping the root) is rejected. The source is never deleted by job lifecycle cleanup.
 - `data/config.json` and `data/cookies.txt` are written with mode `0600`.
 - Internal exceptions never leak `str(e)` to API clients; full stack traces are logged server-side only.
 - `ZERNIO_BASE_URL` env override is allowlisted to `https://*.zernio.com`.

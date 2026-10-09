@@ -251,6 +251,36 @@ async def _apply_banner(
     return banner_output
 
 
+async def _apply_top_text(
+    current_input: str,
+    job_dir: str,
+    clip_index: int,
+    top_text_params: dict,
+    intermediate_files: list,
+) -> str:
+    """Full-width top-edge text strip pass — runs right before the attribution
+    banner so the title chrome sits above every content layer.
+
+    Silently keeps the input when the text is blank/whitespace (defensive —
+    the caller already gated on ``enabled`` + non-blank text). With the
+    background strip enabled the text sits on a translucent full-width band;
+    with it disabled the text renders bare with its black stroke so it stays
+    legible on uncontrolled footage. The PNG is a full-width transparent
+    canvas so it never hides content outside the band/text.
+    """
+    from clippyme.domain.top_text import add_top_text_to_video
+
+    tp = dict(top_text_params or {})
+    text = str(tp.get("text") or "").strip()
+    if not text:
+        return current_input
+
+    top_text_output = os.path.join(job_dir, f"composed_toptext_{clip_index}.mp4")
+    intermediate_files.append(top_text_output)
+    await asyncio.to_thread(add_top_text_to_video, current_input, tp, top_text_output)
+    return top_text_output
+
+
 # Gap between the bottom edge of the letterboxed video and the first caption
 # line — enough to not touch the picture, small enough to still read as attached.
 CAPTION_BAND_PAD = 24
@@ -412,6 +442,7 @@ async def compose_layers(
     logo_params: dict = None,
     grade_params: dict = None,
     banner_params: dict = None,
+    top_text_params: dict = None,
     drop_ranges=None,
 ) -> str:
     """Run the active layer pipeline. Returns the final composed filename (basename).
@@ -431,7 +462,8 @@ async def compose_layers(
             metadata=metadata, clip_info=clip_info, toggles=toggles,
             hook_params=hook_params, subtitle_params=subtitle_params,
             logo_params=logo_params, grade_params=grade_params,
-            banner_params=banner_params, drop_ranges=drop_ranges,
+            banner_params=banner_params, top_text_params=top_text_params,
+            drop_ranges=drop_ranges,
         )
 
 
@@ -448,6 +480,7 @@ async def _compose_layers_impl(
     logo_params: dict = None,
     grade_params: dict = None,
     banner_params: dict = None,
+    top_text_params: dict = None,
     drop_ranges=None,
 ) -> str:
     active = {k: v for k, v in toggles.items() if v}
@@ -456,6 +489,10 @@ async def _compose_layers_impl(
     # downstream active.get('banner') check both see it.
     if (banner_params or {}).get("enabled"):
         active["banner"] = True
+    # The top-text banner uses the same convention: toggles.toptext is the
+    # canonical switch, but params.enabled (frontend send) also activates it.
+    if (top_text_params or {}).get("enabled"):
+        active["toptext"] = True
     logger.info(
         "compose_layers: clip_index=%d active=%s hook_text_len=%d subtitle_mode=%s",
         clip_index, list(active.keys()),
@@ -603,6 +640,23 @@ async def _compose_layers_impl(
             )
             layers_applied.append("logo")
             logger.info("compose_layers: ✓ logo → %s", os.path.basename(current_input))
+
+        # Full-width top-edge title strip. Runs just before the attribution
+        # banner pass — banner stays the literal topmost layer. Enable via
+        # toggles['toptext'] or top_text_params.enabled (frontend convention).
+        ttp = top_text_params or {}
+        toptext_active = bool(active.get("toptext") or ttp.get("enabled"))
+        if toptext_active and not str(ttp.get("text") or "").strip():
+            logger.warning(
+                "compose_layers: top text enabled but text is empty — "
+                "skipping top-text layer.")
+            toptext_active = False
+        if toptext_active:
+            current_input = await _apply_top_text(
+                current_input, job_dir, clip_index, ttp, intermediate_files,
+            )
+            layers_applied.append("toptext")
+            logger.info("compose_layers: ✓ toptext → %s", os.path.basename(current_input))
 
         # Banner absolutely last (topmost) — the attribution pill sits on top of
         # everything, including the logo. Enable via toggles['banner'] or an

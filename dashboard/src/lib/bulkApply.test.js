@@ -89,3 +89,12 @@ test('buildBulkPlan skips the source clip and plans the rest', () => {
   assert.equal(plan[0].clip.id, 'a');
   assert.equal(plan[0].params.toggles.smartcut, true);
 });
+
+test('buildClipParams copies topTextParams verbatim (shared config)', () => {
+  const src = {
+    reframeMode: 'auto', toggles: {}, subtitleParams: {}, logoParams: {}, hookParams: {},
+    topTextParams: { enabled: true, text: 'SB 686', size: 'L', text_color: '#FFFFFF', bg_enabled: true, bg_color: '#000000', bg_opacity: 0.55 },
+  };
+  const out = buildClipParams(src, { reframe_mode: 'auto' }, {});
+  assert.deepEqual(out.topTextParams, src.topTextParams);
+});

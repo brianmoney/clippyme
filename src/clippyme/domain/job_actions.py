@@ -77,7 +77,7 @@ async def cancel_job_action(job_id: str, job: dict) -> dict:
             logger.error("job %s cancelled but output cleanup failed", job_id, exc_info=True)
 
     input_path = job.get("input_path")
-    if input_path:
+    if input_path and not job.get("keep_input"):
         try:
             await asyncio.to_thread(os.remove, input_path)
         except FileNotFoundError:

@@ -64,6 +64,7 @@ async def publish_clip_flow(*, job_id: str, clip_index: int,
                 logo_params=req.get("logo_params") or {},
                 grade_params=req.get("grade_params") or {},
                 banner_params=req.get("banner_params") or {},
+                top_text_params=req.get("top_text_params") or {},
                 drop_ranges=req.get("drop_ranges"),
             )
             upload_path = os.path.join(job_dir, composed_filename)
@@ -79,7 +80,7 @@ async def publish_clip_flow(*, job_id: str, clip_index: int,
         raise NotFoundError(f"Clip file not found: {upload_path}")
 
     # Run the publish in a worker thread (presign + PUT + create are blocking)
-    from clippyme.integrations.social_publisher import publish_clip, ZernioError
+    from clippyme.integrations.social_publisher import _camel_youtube_defaults, publish_clip, ZernioError
     try:
         result = await asyncio.to_thread(
             publish_clip,
@@ -93,6 +94,9 @@ async def publish_clip_flow(*, job_id: str, clip_index: int,
             timezone=req.get("timezone") or (profile or {}).get("timezone") or "America/New_York",
             tiktok_settings=req.get("tiktok_settings"),
             start_date=req.get("start_date"),
+            # Per-profile YouTube upload defaults (category/visibility/kids
+            # flags) reach the payload through the profile resolved above.
+            youtube_defaults=_camel_youtube_defaults((profile or {}).get("youtube")),
         )
     except ValueError as e:
         raise ValidationError(str(e))

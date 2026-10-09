@@ -38,6 +38,7 @@ def snapshot(jobs: dict) -> dict:
             "cmd": list(job.get("cmd") or []),
             "output_dir": job.get("output_dir", ""),
             "input_path": job.get("input_path"),
+            "keep_input": bool(job.get("keep_input", False)),
             "pid": job.get("pid"),
             "attempt": int(job.get("attempt") or 0),
             "max_attempts": int(job.get("max_attempts") or 0),
@@ -186,6 +187,7 @@ def _recovered_entry(job_id: str, record: dict, message: str) -> dict:
         "env": env,
         "output_dir": output_dir,
         "input_path": record.get("input_path"),
+        "keep_input": bool(record.get("keep_input", False)),
         "attempt": max(0, int(record.get("attempt") or 0)),
         "max_attempts": max_attempts,
         "result": {"clips": [], **runtime_result_fields(output_dir)},
@@ -275,6 +277,7 @@ def recover_jobs(*, journal_path: str, jobs: dict, job_queue, output_root: str) 
             "env": {},
             "output_dir": output_dir,
             "input_path": record.get("input_path"),
+            "keep_input": bool(record.get("keep_input", False)),
             "result": {"clips": [], **runtime_result_fields(output_dir)},
         }
         counts["failed"] += 1

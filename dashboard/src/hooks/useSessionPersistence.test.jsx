@@ -11,6 +11,13 @@ test('persists and restores an active URL job', () => {
   expect(loadPersistedSession()).toMatchObject({ jobId: 'j', status: 'processing', activeTab: 'create' });
 });
 
+test('persists and restores an active server-path job', () => {
+  renderHook(() => useSessionPersistence({ status: 'processing', jobId: 'j2', results: null, processingMedia: { type: 'local', payload: '/videos/big.mp4' }, activeTab: 'create', preselections: {} }));
+  const restored = loadPersistedSession();
+  expect(restored).toMatchObject({ jobId: 'j2', status: 'processing' });
+  expect(restored.processingMedia).toEqual({ type: 'local', payload: '/videos/big.mp4' });
+});
+
 test('idle clears the saved session', () => {
   localStorage.setItem(SESSION_KEY, JSON.stringify({ jobId: 'j' }));
   renderHook(() => useSessionPersistence({ status: 'idle', jobId: null, results: null, processingMedia: null, activeTab: 'create' }));

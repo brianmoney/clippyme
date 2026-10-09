@@ -57,8 +57,9 @@ export function pipelineStepMeta(logs = [], opts = {}) {
   const joined = (logs || []).join(' ');
   const meta = {};
 
-  // --- Download: a local upload is never fetched from a URL ----------------
+  // --- Download: a local/server file is never fetched from a URL ----------
   if (opts.mediaType === 'file') meta.download = 'local file';
+  if (opts.mediaType === 'local') meta.download = 'server path';
 
   // --- Transcribe: the provider/model the backend actually used ------------
   // "🎙️  Transcribing with Deepgram [nova-3, lang=multi] …"

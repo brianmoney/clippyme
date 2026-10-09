@@ -307,12 +307,13 @@ async def process_endpoint(
     if not api_key:
         raise HTTPException(status_code=400, detail="Missing X-Gemini-Key header")
 
-    # Handle JSON body via ProcessRequest for URL payloads. Pydantic
-    # enforces the reframe_mode regex and the instructions length cap
-    # before we hand anything to build_main_cmd. Multipart uploads keep
-    # the manual form extraction because the file streaming path is
-    # already using FastAPI's File/Form dependencies.
+    # Handle JSON body via ProcessRequest for URL/local_path payloads. Pydantic
+    # enforces the reframe_mode regex, the instructions length cap and the
+    # local_path allow-list before we hand anything to build_main_cmd.
+    # Multipart uploads keep the manual form extraction because the file
+    # streaming path is already using FastAPI's File/Form dependencies.
     instructions = None
+    local_path = None
     reframe_mode = None
     letterbox_zoom = None
     aspect = None
@@ -327,10 +328,14 @@ async def process_endpoint(
             body = await request.json()
             validated = ProcessRequest.model_validate(body or {})
         except ValidationError as exc:
-            raise HTTPException(status_code=400, detail=exc.errors())
+            # `include_context=False` keeps pydantic's raw exception objects
+            # (ctx.error) out of the JSON payload — passing exc.errors() verbatim
+            # would crash the response for value_error types.
+            raise HTTPException(status_code=400, detail=exc.errors(include_context=False))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         url = validated.url
+        local_path = validated.local_path
         instructions = validated.instructions
         reframe_mode = validated.reframe_mode
         letterbox_zoom = validated.letterbox_zoom
@@ -379,10 +384,11 @@ async def process_endpoint(
                 "min_duration": min_duration,
             })
         except ValidationError as exc:
-            raise HTTPException(status_code=400, detail=exc.errors())
+            # include_context=False — see the JSON-branch comment above.
+            raise HTTPException(status_code=400, detail=exc.errors(include_context=False))
 
-    if not url and not file:
-        raise HTTPException(status_code=400, detail="Must provide URL or File")
+    if not url and not local_path and not file:
+        raise HTTPException(status_code=400, detail="Must provide URL, local_path, or File")
 
     job_id = str(uuid.uuid4())
     job_output_dir = os.path.join(OUTPUT_DIR, job_id)
@@ -392,7 +398,8 @@ async def process_endpoint(
     env["GEMINI_API_KEY"] = api_key
 
     input_path = None
-    if not url:
+    keep_input = False
+    if not url and not local_path:
         # Save uploaded file with a server-generated name. We deliberately
         # discard the client-supplied filename (path traversal risk) and only
         # preserve a sanitized extension whitelisted to known media formats.
@@ -425,6 +432,12 @@ async def process_endpoint(
             except FileNotFoundError:
                 pass
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    elif local_path:
+        # Server-local input: the file already lives on the backend (NFS
+        # mount, docker cp'd, ...) and is validated/realpathed by the schema.
+        # We read it in place and never delete it — ClippyMe does not own it.
+        input_path = local_path
+        keep_input = True
 
     try:
         cmd = build_main_cmd(
@@ -444,7 +457,7 @@ async def process_endpoint(
         )
     except ValueError as exc:
         await asyncio.to_thread(shutil.rmtree, job_output_dir, True)
-        if input_path:
+        if input_path and not keep_input:
             try:
                 await asyncio.to_thread(os.remove, input_path)
             except FileNotFoundError:
@@ -452,10 +465,13 @@ async def process_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Queue-full rollback removes both the output directory and uploaded input.
+    # Server-local inputs are never owned by the job, so nothing to clean up.
     await submit_job(
         jobs=jobs, job_queue=job_queue, job_id=job_id,
         cmd=cmd, env=env, job_output_dir=job_output_dir,
-        on_change=persist_jobs, cleanup_paths=(input_path,), input_path=input_path,
+        on_change=persist_jobs,
+        cleanup_paths=() if keep_input else (input_path,),
+        input_path=input_path, keep_input=keep_input,
     )
 
     return {"job_id": job_id, "status": "queued"}
@@ -916,8 +932,9 @@ async def delete_history(job_id: str, request: Request):
         raise HTTPException(status_code=500, detail="Could not delete job files") from exc
     if job_id in jobs:
         input_path = jobs[job_id].get("input_path")
+        keep_input = jobs[job_id].get("keep_input")
         del jobs[job_id]
-        if input_path:
+        if input_path and not keep_input:
             try:
                 await asyncio.to_thread(os.remove, input_path)
             except FileNotFoundError:
@@ -951,6 +968,7 @@ async def compose_clip(job_id: str, clip_index: int, req: ComposeRequest, reques
             logo_params=req.logo_params,
             grade_params=req.grade_params,
             banner_params=req.banner_params,
+            top_text_params=req.top_text_params,
             drop_ranges=req.drop_ranges,
         )
         return {"composed_url": f"/videos/{job_id}/{composed_filename}"}

@@ -6,13 +6,13 @@
 // realApi functions, tests pass fakes.
 
 export async function runApplyEdit({ jobId, idx, apiIdx = idx, params, api, updateClipState, pushToast, now = Date.now }) {
-  const { reframeMode, baseMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams, dropRanges } = params;
+  const { reframeMode, baseMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams, topTextParams, dropRanges } = params;
   const reframeChanged = reframeMode !== baseMode;
-  const anyCompose = !!(toggles.smartcut || toggles.subtitles || toggles.hook || toggles.logo || toggles.grade || toggles.banner);
+  const anyCompose = !!(toggles.smartcut || toggles.subtitles || toggles.hook || toggles.logo || toggles.grade || toggles.banner || toggles.toptext);
 
   // Persist the user's choices + flip the card into its processing state up
   // front (so the badge/preview already reflect the new reframe mode).
-  updateClipState(idx, { reframeMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams, dropRanges,
+  updateClipState(idx, { reframeMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams, topTextParams, dropRanges,
     processing: reframeChanged || anyCompose });
 
   if (!reframeChanged && !anyCompose) {
@@ -37,6 +37,7 @@ export async function runApplyEdit({ jobId, idx, apiIdx = idx, params, api, upda
         logo_params: toggles.logo ? logoParams : {},
         grade_params: toggles.grade ? gradeParams : {},
         banner_params: toggles.banner ? bannerParams : {},
+        top_text_params: toggles.toptext ? topTextParams : {},
         drop_ranges: toggles.smartcut ? (dropRanges || []) : [],
       });
       updateClipState(idx, { previewUrl: composed_url, previewBust: now(), processing: false });

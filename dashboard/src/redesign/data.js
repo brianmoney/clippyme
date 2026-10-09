@@ -1,4 +1,5 @@
 // ClippyMe redesign — shared constants (presets, fonts, languages, pipeline steps).
+import { TOP_TEXT_EXAMPLE } from '../lib/seedClipParams.js';
 
 export const PRESETS = [
   {
@@ -96,6 +97,24 @@ export const HOOK_STYLE_DEFAULT = {
 };
 // Outline thickness presets → px stroke width.
 export const HOOK_OUTLINE = [['0', 'None'], ['4', 'Thin'], ['8', 'Thick']];
+
+// Top-edge title banner (full-width text strip): font-size presets scale to
+// video width backend-side. Keys match the seed + compose top_text_params.
+export const TOP_TEXT_SIZES = [
+  { id: 'S', label: 'Small' },
+  { id: 'M', label: 'Medium' },
+  { id: 'L', label: 'Large' },
+];
+export const TOP_TEXT_DEFAULT = {
+  text: TOP_TEXT_EXAMPLE,
+  size: 'M',
+  text_color: '#FFFFFF',
+  bg_enabled: true,
+  bg_color: '#000000',
+  bg_opacity: 0.55,
+};
+// Strip tint swatches (translucent bands behind the title text).
+export const TOP_TEXT_BG_COLORS = ['#000000', '#FFFFFF', '#581BBA', '#FFE000', '#00E5FF', '#FF4D6D'];
 
 export const LANGUAGES = [
   ['multi', 'Multi-language'], ['en', 'English'], ['it', 'Italiano'], ['es', 'Español'],

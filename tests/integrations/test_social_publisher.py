@@ -161,6 +161,103 @@ def test_gap_ok_enforces_minimum_gap():
 
 # --- publish_clip manual-mode timestamp validation -------------------------
 
+# --- YouTube create-post payload (title/category in platformSpecificData) ---
+
+def test_with_youtube_defaults_fills_video_title_category_visibility():
+    targets = sp._with_youtube_defaults(
+        [{"platform": "youtube", "accountId": "a"}],
+        "Epic moment!",
+    )
+    data = targets[0]["platformSpecificData"]
+    assert data["title"] == "Epic moment!"
+    assert data["visibility"] == "public"
+    assert data["madeForKids"] is False
+    assert data["categoryId"] == "22"
+    # The youtube account survives + non-youtube targets are untouched.
+    assert targets[0]["accountId"] == "a"
+    assert len(targets) == 1
+
+
+def test_with_youtube_defaults_does_not_mutate_caller_targets():
+    targets = [{"platform": "youtube", "accountId": "a"}]
+    sp._with_youtube_defaults(targets, "Title")
+    assert targets[0] == {"platform": "youtube", "accountId": "a"}
+
+
+def test_with_youtube_defaults_keeps_callers_platform_specific_data():
+    targets = sp._with_youtube_defaults(
+        [{"platform": "youtube", "accountId": "a", "platformSpecificData": {"madeForKids": True, "title": "X"}}],
+        "Clip title",
+    )
+    data = targets[0]["platformSpecificData"]
+    # Caller's explicit fields win; missing ones still defaulted.
+    assert data["title"] == "X"
+    assert data["madeForKids"] is True
+    assert data["visibility"] == "public"
+    assert data["categoryId"] == "22"
+
+
+def test_with_youtube_defaults_blank_title_falls_back():
+    targets = sp._with_youtube_defaults(
+        [{"platform": "youtube", "accountId": "a"}], "   ")
+    assert targets[0]["platformSpecificData"]["title"] == "Untitled Video"
+
+
+def test_with_youtube_defaults_leaves_other_platforms_bare():
+    targets = sp._with_youtube_defaults(
+        [{"platform": "tiktok", "accountId": "t"}], "T")
+    assert targets[0] == {"platform": "tiktok", "accountId": "t"}
+
+
+def test_with_youtube_defaults_honours_configured_defaults():
+    targets = sp._with_youtube_defaults(
+        [{"platform": "youtube", "accountId": "a"}],
+        "Title",
+        youtube_defaults={
+            "categoryId": "25",
+            "madeForKids": True,
+            "containsSyntheticMedia": False,
+            "visibility": "unlisted",
+        },
+    )
+    data = targets[0]["platformSpecificData"]
+    assert data["categoryId"] == "25"
+    assert data["madeForKids"] is True
+    assert data["containsSyntheticMedia"] is False
+    assert data["visibility"] == "unlisted"
+
+
+def test_camel_youtube_defaults_maps_snake_case_stored_block():
+    assert sp._camel_youtube_defaults({
+        "category_id": "27",
+        "made_for_kids": False,
+        "contains_synthetic_media": True,
+        "visibility": "private",
+    }) == {
+        "categoryId": "27",
+        "madeForKids": False,
+        "containsSyntheticMedia": True,
+        "visibility": "private",
+    }
+    # Partial block → only provided keys.
+    assert sp._camel_youtube_defaults({"category_id": "24"}) == {"categoryId": "24"}
+    assert sp._camel_youtube_defaults(None) == {}
+    assert sp._camel_youtube_defaults("junk") == {}
+
+
+def test_extract_youtube_tags_strips_hashes_and_dedupes():
+    assert sp._extract_youtube_tags("Hook #viral moment #Viral #clips") == ["viral", "clips"]
+    assert sp._extract_youtube_tags("no hashtags here") == []
+
+
+def test_extract_youtube_tags_enforces_youtube_limits():
+    long_tag = "#" + "x" * 200
+    many = " ".join(f"#{i}" for i in range(10))  # 1-char tags
+    tags = sp._extract_youtube_tags(f"{long_tag} {many}")
+    assert all(len(t) <= 100 for t in tags)
+    # Combined ≤ 500: only the first ~460 single-char (plus the 5 total) fit.
+    assert sum(len(t) for t in tags) <= 500
+
 def _guard_network(monkeypatch):
     """Make any ZernioClient use blow up loudly, so a test that reaches the
     network instead of failing validation is unambiguous (and never hits the
@@ -301,6 +398,77 @@ def test_auto_schedule_uses_configured_timezone_not_server_local(monkeypatch, tm
     assert result["scheduled_for"].endswith("+02:00")
     assert captured["timezone"] == "Europe/Rome"
     assert captured["scheduled_for"] == result["scheduled_for"]
+
+def test_youtube_publish_forwards_title_category_and_tags(monkeypatch, tmp_path):
+    """A publish targeting YouTube must send the video title/category inside the
+    target's platformSpecificData and top-level tags derived from the caption —
+    the root `title` alone is not applied to the YouTube video."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"video")
+    captured: dict = {}
+
+    class Client:
+        def __init__(self, api_key):
+            pass
+
+        def presign_upload(self, filename, content_type="video/mp4", size_bytes=None):
+            return {"uploadUrl": "https://upload.example/object", "publicUrl": "https://cdn.example/object"}
+
+        def upload_to_presigned(self, *args, **kwargs):
+            pass
+
+        def create_post(self, **kwargs):
+            captured.update(kwargs)
+            return {"post": {"id": "p1", "status": "published"}}
+
+    monkeypatch.setattr(sp, "ZernioClient", Client)
+    sp.publish_clip(
+        api_key="sk_test",
+        clip_path=str(clip),
+        title="Epic moment",
+        caption="Watch till the end! #viral #clips",
+        platform_targets=[{"platform": "youtube", "accountId": "a"}],
+        schedule_mode="now",
+    )
+    yt = captured["platforms"][0]
+    assert yt["platformSpecificData"]["title"] == "Epic moment"
+    assert yt["platformSpecificData"]["visibility"] == "public"
+    assert yt["platformSpecificData"]["madeForKids"] is False
+    assert yt["platformSpecificData"]["categoryId"] == "22"
+    assert captured["tags"] == ["viral", "clips"]
+
+
+def test_non_youtube_publish_sends_no_tags(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"video")
+    captured: dict = {}
+
+    class Client:
+        def __init__(self, api_key):
+            pass
+
+        def presign_upload(self, filename, content_type="video/mp4", size_bytes=None):
+            return {"uploadUrl": "https://upload.example/object", "publicUrl": "https://cdn.example/object"}
+
+        def upload_to_presigned(self, *args, **kwargs):
+            pass
+
+        def create_post(self, **kwargs):
+            captured.update(kwargs)
+            return {"post": {"id": "p1", "status": "published"}}
+
+    monkeypatch.setattr(sp, "ZernioClient", Client)
+    sp.publish_clip(
+        api_key="sk_test",
+        clip_path=str(clip),
+        title="T",
+        caption="hashtags #notfor #youtube",
+        platform_targets=[{"platform": "tiktok", "accountId": "a"}],
+        schedule_mode="now",
+    )
+    assert captured.get("tags") in (None, [])
+    # No platformSpecificData injected for non-YouTube targets.
+    assert captured["platforms"][0] == {"platform": "tiktok", "accountId": "a"}
 
 
 def test_presigned_upload_dns_failure_is_fail_closed(monkeypatch):

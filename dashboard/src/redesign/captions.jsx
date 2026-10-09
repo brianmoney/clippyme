@@ -24,10 +24,10 @@ import { clipPreviewSrc } from './realApi';
 import { useManualTrim } from '../hooks/useManualTrim';
 import { useHookRewrite } from '../hooks/useHookRewrite';
 import {
-  ReframeTab, SmartCutTab, TrimTab, CaptionsTab, HookTab, LogoTab, GradeTab, BannerTab,
+  ReframeTab, SmartCutTab, TrimTab, CaptionsTab, HookTab, LogoTab, GradeTab, BannerTab, TopTextTab,
 } from './editTabs';
 import {
-  seedSubtitleParams, seedHookParams, seedLogoParams, seedGradeParams, seedBannerParams,
+  seedSubtitleParams, seedHookParams, seedLogoParams, seedGradeParams, seedBannerParams, seedTopTextParams, TOP_TEXT_EXAMPLE,
 } from '../lib/seedClipParams';
 
 // Pull the IG-style hook style keys out of a flat hookParams object.
@@ -59,6 +59,7 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
   const [hookOn, setHookOn] = useState(t0.hook ?? !!pre.hook);
   const [logoOn, setLogoOn] = useState(t0.logo ?? !!pre.logo);
   const [bannerOn, setBannerOn] = useState(t0.banner ?? !!(pre.banner || sourceBanner));
+  const [topTextOn, setTopTextOn] = useState(t0.toptext ?? !!pre.top_text?.enabled);
 
   const lp0 = initial?.logoParams || seedLogoParams(preselections);
   const [logo, setLogo] = useState(() => ({
@@ -76,6 +77,17 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
     platform: bp0.platform || 'kick',
     handle: bp0.handle || '',
     y_pct: bp0.y_pct ?? 0.85,
+  }));
+
+  // Top-edge title banner. Seeded prior-edit → Create pre-selection → default.
+  const tp0 = initial?.topTextParams || seedTopTextParams(preselections);
+  const [topText, setTopText] = useState(() => ({
+    text: tp0.text || TOP_TEXT_EXAMPLE,
+    size: tp0.size || 'M',
+    text_color: tp0.text_color || '#FFFFFF',
+    bg_enabled: tp0.bg_enabled !== false,
+    bg_color: tp0.bg_color || '#000000',
+    bg_opacity: tp0.bg_opacity ?? 0.55,
   }));
 
   // Staged subtitle state, one object in the seedClipParams key vocabulary
@@ -145,6 +157,7 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
     { id: 'logo', label: 'Logo', icon: 'stamp' },
     { id: 'grade', label: 'Grade', icon: 'palette' },
     { id: 'banner', label: 'Banner', icon: 'rss' },
+    { id: 'toptext', label: 'Top banner', icon: 'panel-top' },
   ].filter(Boolean);
 
   const gradeOn = gradePreset && gradePreset !== 'none';
@@ -152,7 +165,7 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
   // Manual trim must run the Smart Cut compose stage (drop_ranges only apply
   // inside _apply_smartcut backend-side), so dropping text implies smartcut.
   const effSmartcut = smartcut || hasDrops;
-  const anyCompose = effSmartcut || subsOn || hookOn || logoOn || gradeOn || bannerOn;
+  const anyCompose = effSmartcut || subsOn || hookOn || logoOn || gradeOn || bannerOn || topTextOn;
   const willReprocess = reframeChanged || anyCompose;
 
   // Non-blocking apply: seed the full param shape the compose backend expects,
@@ -174,8 +187,11 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
     const logoParams = { position: logo.position, size: logo.size };
     const gradeParams = { preset: gradePreset };
     const bannerParams = { enabled: bannerOn, platform: banner.platform, handle: banner.handle, y_pct: banner.y_pct };
-    const toggles = { smartcut: effSmartcut, subtitles: subsOn, hook: hookOn, logo: logoOn, grade: gradeOn, banner: bannerOn };
-    onApply({ reframeMode, baseMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams,
+    const topTextParams = { enabled: topTextOn, text: topText.text, size: topText.size,
+      text_color: topText.text_color, bg_enabled: topText.bg_enabled, bg_color: topText.bg_color,
+      bg_opacity: topText.bg_opacity };
+    const toggles = { smartcut: effSmartcut, subtitles: subsOn, hook: hookOn, logo: logoOn, grade: gradeOn, banner: bannerOn, toptext: topTextOn };
+    onApply({ reframeMode, baseMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams, topTextParams,
       dropRanges: effSmartcut ? dropRanges : [] });
   };
 
@@ -237,6 +253,10 @@ export function EditClipModal({ clip, idx, jobId, initial, appliedMode, preselec
             {tab === 'banner' && (
               <BannerTab on={bannerOn} onToggle={setBannerOn} banner={banner}
                 onChange={(partial) => setBanner((b) => ({ ...b, ...partial }))} />
+            )}
+            {tab === 'toptext' && (
+              <TopTextTab on={topTextOn} onToggle={setTopTextOn} value={topText}
+                onChange={(partial) => setTopText((t) => ({ ...t, ...partial }))} />
             )}
           </div>
         </div>

@@ -22,6 +22,25 @@ const FALLBACK_MODELS = [
   { name: 'gemini-2.5-pro', display_name: 'Gemini 2.5 Pro — max quality' },
 ];
 
+// YouTube video category ids (what Zernio/YouTube expect). Mirrors the backend
+// allow-list in storage.config_store.YOUTUBE_CATEGORY_IDS.
+const YT_CATEGORIES = {
+  '22': 'People & Blogs',
+  '1': 'Film & Animation',
+  '2': 'Autos & Vehicles',
+  '10': 'Music',
+  '15': 'Pets & Animals',
+  '17': 'Sports',
+  '20': 'Gaming',
+  '23': 'Comedy',
+  '24': 'Entertainment',
+  '25': 'News & Politics',
+  '26': 'Howto & Style',
+  '27': 'Education',
+  '28': 'Science & Technology',
+  '29': 'Nonprofits & Activism',
+};
+
 export function HistoryView({ history, availableIds, onOpen, onDelete, onClear }) {
   if (!history.length) {
     return (
@@ -210,6 +229,10 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
 
   const patchProfile = (i, patch) => setProfiles((ps) => ps.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
 
+  const patchProfileYoutube = (i, key, value) => setProfiles((ps) => ps.map((p, idx) => (
+    idx === i ? { ...p, youtube: { ...(p.youtube || {}), [key]: value } } : p
+  )));
+
   const patchAccount = (i, key, value) => setProfiles((ps) => ps.map((p, idx) => (
     idx === i ? { ...p, accounts: { ...(p.accounts || {}), [key]: value } } : p
   )));
@@ -221,6 +244,7 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
       id: '', name: '', api_key: '', is_default: ps.length === 0,
       accounts: { tiktok: '', instagram: '', youtube: '' },
       timezone: zernio?.timezone || 'America/New_York',
+      youtube: { category_id: '22', made_for_kids: false, contains_synthetic_media: false, visibility: 'public' },
     }]);
   };
 
@@ -442,6 +466,49 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
                     value={p.accounts?.[pp] || ''} placeholder={`${pp} account id`}
                     onChange={(e) => patchAccount(i, pp, e.target.value)} />
                 ))}
+              </div>
+              <div style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg-2)' }}>YouTube upload defaults</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fg-2)' }}>
+                    Category
+                    <select className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                      aria-label={`${p.name || 'profile'} YouTube category`}
+                      value={p.youtube?.category_id || '22'}
+                      onChange={(e) => patchProfileYoutube(i, 'category_id', e.target.value)}>
+                      {Object.entries(YT_CATEGORIES).map(([id, label]) => (
+                        <option key={id} value={id}>{label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--fg-2)' }}>
+                    Visibility
+                    <select className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                      aria-label={`${p.name || 'profile'} YouTube visibility`}
+                      value={p.youtube?.visibility || 'public'}
+                      onChange={(e) => patchProfileYoutube(i, 'visibility', e.target.value)}>
+                      <option value="public">Public</option>
+                      <option value="unlisted">Unlisted</option>
+                      <option value="private">Private</option>
+                    </select>
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--fg-2)', cursor: 'pointer' }}>
+                    <input type="checkbox"
+                      aria-label={`${p.name || 'profile'} made for kids`}
+                      checked={!!p.youtube?.made_for_kids}
+                      onChange={(e) => patchProfileYoutube(i, 'made_for_kids', e.target.checked)} />
+                    Made for kids (COPPA)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--fg-2)', cursor: 'pointer' }}>
+                    <input type="checkbox"
+                      aria-label={`${p.name || 'profile'} contains AI-generated content`}
+                      checked={!!p.youtube?.contains_synthetic_media}
+                      onChange={(e) => patchProfileYoutube(i, 'contains_synthetic_media', e.target.checked)} />
+                    Contains AI-generated content
+                  </label>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Btn variant="ghost" size="sm" icon="rss" disabled={discovering === (p.id || p.name)}

@@ -64,6 +64,44 @@ test('grade preset flows through when set', () => {
   assert.deepEqual(optsToPreselections({ gradePreset: 'vivid_pop' }).grade, { preset: 'vivid_pop' });
 });
 
+test('top_text preselection carries text + style when enabled', () => {
+  const p = optsToPreselections({
+    topText: true,
+    topTextStyle: { text: 'SB 686', size: 'L', text_color: '#FFE000', bg_enabled: true, bg_color: '#000000', bg_opacity: 0.8 },
+  });
+  assert.equal(p.top_text.enabled, true);
+  assert.equal(p.top_text.text, 'SB 686');
+  assert.equal(p.top_text.size, 'L');
+  assert.equal(p.top_text.text_color, '#FFE000');
+});
+
+test('top_text is false when disabled or text blank', () => {
+  assert.equal(optsToPreselections({ topText: true, topTextStyle: {} }).top_text, false);
+  assert.equal(optsToPreselections({ topText: false }).top_text, false);
+});
+
+test('exportClip sends top_text_params when the toptext toggle is on', async () => {
+  const bodies = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    bodies.push(JSON.parse(opts.body));
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ composed_url: '/videos/j/composed.mp4' }) });
+  };
+  try {
+    const clip = { original_index: 0, video_url: '/videos/j/clip_1.mp4' };
+    const state = {
+      toggles: { toptext: true, subtitles: false, hook: false, logo: false, grade: false, banner: false, smartcut: false },
+      topTextParams: { enabled: true, text: 'St. Johns BOCC', size: 'M', text_color: '#FFFFFF', bg_enabled: true, bg_color: '#000000', bg_opacity: 0.55 },
+    };
+    await exportClip('job-1', 0, clip, state, {});
+    assert.equal(bodies.length, 1);
+    assert.equal(bodies[0].toggles.toptext, true);
+    assert.equal(bodies[0].top_text_params.text, 'St. Johns BOCC');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // --- URL safety: a malicious API response must never become an executable src
 
 test('clipVideoSrc neutralizes javascript: and data: schemes', () => {

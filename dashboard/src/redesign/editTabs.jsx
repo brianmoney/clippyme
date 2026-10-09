@@ -7,6 +7,7 @@ import { HookStyleControls, HookPreview } from './hookStyle';
 import { SubtitleControls } from './subtitleControls';
 import { LogoControls, GradeControls } from './layerControls';
 import { BannerControls } from './bannerControls';
+import { TopTextControls, TopTextPreview } from './topTextControls';
 import { LANGUAGES } from './data';
 
 export const REFRAME_OPTS = [
@@ -177,6 +178,24 @@ export function BannerTab({ on, onToggle, banner, onChange }) {
       {on && (
         <div className="cfg-drawer fade-in">
           <BannerControls value={banner} onChange={onChange} />
+        </div>
+      )}
+    </>
+  );
+}
+
+export function TopTextTab({ on, onToggle, value, onChange }) {
+  return (
+    <>
+      <div className="edit-opt">
+        <div className="eo-ico"><Icon n="panel-top" /></div>
+        <div className="eo-txt"><div className="eo-t">Top banner</div><div className="eo-d">Full-width title strip along the top of the clip</div></div>
+        <Switch on={on} onChange={onToggle} />
+      </div>
+      {on && (
+        <div className="cfg-drawer fade-in">
+          <TopTextPreview text={value?.text || ''} value={value} />
+          <TopTextControls value={value} onChange={onChange} />
         </div>
       )}
     </>

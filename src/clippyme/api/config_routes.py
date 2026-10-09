@@ -22,6 +22,7 @@ from fastapi import APIRouter, File, Header, HTTPException, Query, Request, Uplo
 
 from clippyme.api.schemas import ConfigUpdateRequest, ZernioConfigRequest
 from clippyme.api.security import require_trusted_config_request
+from clippyme.domain.local_input import configured_local_input_dir
 from clippyme.pipeline.gemini_service import list_available_models
 from clippyme.storage.config_store import (
     get_zernio_profile,
@@ -113,6 +114,18 @@ async def get_config(request: Request):
         else:
             masked[k] = v
     return masked
+
+
+@router.get("/api/config/local-input")
+async def get_local_input_dir(request: Request):
+    """Expose the allow-listed root for the Create tab's Server source.
+
+    Non-secret (an env-configured directory), but still trusted-client gated —
+    the dashboard renders it as the input placeholder so operators see the
+    path their LOCAL_INPUT_DIR actually resolves to.
+    """
+    require_trusted_config_request(request)
+    return {"dir": configured_local_input_dir()}
 
 
 @router.post("/api/config")

@@ -70,3 +70,95 @@ def test_publish_rejects_oversized_scheduled_for():
             platforms=[{"platform": "tiktok", "accountId": "a"}],
             scheduled_for="9" * 65,
         )
+
+
+def test_zernio_profile_accepts_youtube_defaults():
+    req = ZernioConfigRequest(
+        profiles=[{
+            "id": "p1",
+            "name": "Test",
+            "api_key": "sk_x",
+            "is_default": True,
+            "accounts": {"youtube": "yt1"},
+            "youtube": {
+                "category_id": "25",
+                "made_for_kids": False,
+                "contains_synthetic_media": False,
+                "visibility": "unlisted",
+            },
+        }]
+    )
+    assert req.profiles[0].youtube["category_id"] == "25"
+    assert req.profiles[0].youtube["visibility"] == "unlisted"
+
+
+def test_zernio_profile_accepts_partial_youtube_defaults():
+    req = ZernioConfigRequest(
+        profiles=[{
+            "id": "p1",
+            "name": "Test",
+            "api_key": "sk_x",
+            "is_default": True,
+            "accounts": {},
+            "youtube": {"category_id": "27"},
+        }]
+    )
+    assert req.profiles[0].youtube == {"category_id": "27"}
+
+
+def test_zernio_profile_rejects_unknown_youtube_default():
+    with pytest.raises(ValidationError):
+        ZernioConfigRequest(
+            profiles=[{
+                "id": "p1",
+                "name": "Test",
+                "api_key": "sk_x",
+                "is_default": True,
+                "accounts": {},
+                "youtube": {"hashtags": ["x"]},
+            }]
+        )
+
+
+def test_zernio_profile_accepts_any_numeric_youtube_category():
+    # Off-list ids are legal — YouTube has more categories than the dropdown's
+    # curated shortlist, so a stored value must never be rejected by the API.
+    req = ZernioConfigRequest(
+        profiles=[{
+            "id": "p1",
+            "name": "Test",
+            "api_key": "sk_x",
+            "is_default": True,
+            "accounts": {},
+            "youtube": {"category_id": "999"},
+        }]
+    )
+    assert req.profiles[0].youtube["category_id"] == "999"
+
+
+def test_zernio_profile_rejects_non_numeric_youtube_category():
+    with pytest.raises(ValidationError):
+        ZernioConfigRequest(
+            profiles=[{
+                "id": "p1",
+                "name": "Test",
+                "api_key": "sk_x",
+                "is_default": True,
+                "accounts": {},
+                "youtube": {"category_id": "abc"},
+            }]
+        )
+
+
+def test_zernio_profile_rejects_bad_youtube_visibility():
+    with pytest.raises(ValidationError):
+        ZernioConfigRequest(
+            profiles=[{
+                "id": "p1",
+                "name": "Test",
+                "api_key": "sk_x",
+                "is_default": True,
+                "accounts": {},
+                "youtube": {"visibility": "hidden"},
+            }]
+        )

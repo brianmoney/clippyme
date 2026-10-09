@@ -26,3 +26,10 @@ test('validates uploaded file size', () => {
   expect(validateCreateOptions({ mode: 'single', source: 'file', file: { name: 'x.mp4', type: 'video/mp4', size: 10 } }).valid).toBe(true);
   expect(validateCreateOptions({ mode: 'single', source: 'file', file: { name: 'x.mp4', type: 'video/mp4', size: 17 * 1024 ** 3 } }).valid).toBe(false);
 });
+
+test('validates a server-side path source', () => {
+  expect(validateCreateOptions({ mode: 'single', source: 'local', localPath: '/videos/big.mp4' }).valid).toBe(true);
+  expect(validateCreateOptions({ mode: 'single', source: 'local', localPath: 'videos/big.mp4' }).valid).toBe(false); // not absolute
+  expect(validateCreateOptions({ mode: 'single', source: 'local', localPath: '/videos/big.txt' }).valid).toBe(false); // bad ext
+  expect(validateCreateOptions({ mode: 'single', source: 'local', localPath: '' }).valid).toBe(false);
+});

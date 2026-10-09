@@ -36,9 +36,11 @@ export function useSessionPersistence({ status, jobId, results, processingMedia,
     }
     const safeMedia = processingMedia?.type === 'url' || processingMedia?.type === 'batch'
       ? processingMedia
-      : processingMedia?.payload?.name
-        ? { type: 'file', payload: { name: processingMedia.payload.name } }
-        : null;
+      : processingMedia?.type === 'local'
+        ? { type: 'local', payload: String(processingMedia.payload || '') }
+        : processingMedia?.payload?.name
+          ? { type: 'file', payload: { name: processingMedia.payload.name } }
+          : null;
     const payload = {
       jobId,
       status,

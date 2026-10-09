@@ -55,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 test('all jobs terminal → status complete and onBatchFinished fires once', async () => {
@@ -127,4 +128,41 @@ test('poll loop is cleared on unmount', async () => {
   expect(vi.getTimerCount()).toBe(1);
   unmount();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+function seedLongClipTaste() {
+  localStorage.setItem(
+    'clippyme_taste_v1',
+    JSON.stringify(Array.from({ length: 8 }, () => ({ a: 'kept', d: 98, s: 85 }))),
+  );
+}
+
+test('taste duration preference fills min_duration when unset', async () => {
+  seedLongClipTaste();
+  const { handlers } = mountHook();
+
+  await act(() => handlers.handleBatchProcess({ urls: ['u1'], preselections: {} }));
+
+  expect(submitBatchJob).toHaveBeenCalledWith(
+    expect.objectContaining({
+      preselections: expect.objectContaining({ min_duration: 92 }),
+    }),
+    'k',
+  );
+});
+
+test('an explicit min clip length wins over the taste floor', async () => {
+  seedLongClipTaste();
+  const { handlers } = mountHook();
+
+  await act(() =>
+    handlers.handleBatchProcess({ urls: ['u1'], preselections: { min_duration: 30 } }),
+  );
+
+  expect(submitBatchJob).toHaveBeenCalledWith(
+    expect.objectContaining({
+      preselections: expect.objectContaining({ min_duration: 30 }),
+    }),
+    'k',
+  );
 });

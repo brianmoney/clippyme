@@ -31,6 +31,7 @@ test('detectPipelineStep ignores the removed dead markers and empties', () => {
 
 test('pipelineStepMeta.download reflects a local upload vs a URL fetch', () => {
   assert.equal(pipelineStepMeta([], { mediaType: 'file' }).download, 'local file');
+  assert.equal(pipelineStepMeta([], { mediaType: 'local' }).download, 'server path');
   assert.equal(pipelineStepMeta([], { mediaType: 'url' }).download, undefined); // keeps static "fetch source"
   assert.equal(pipelineStepMeta([], {}).download, undefined);
 });

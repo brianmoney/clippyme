@@ -42,9 +42,9 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
   const model = (data.preselections?.model || '').trim();
   const minDuration = data.preselections?.min_duration ? Number(data.preselections.min_duration) : null;
 
-  if (data.type === 'url') {
+  if (data.type === 'url' || data.type === 'local') {
     headers['Content-Type'] = 'application/json';
-    const jsonBody = { url: data.payload };
+    const jsonBody = data.type === 'url' ? { url: data.payload } : { local_path: data.payload };
     if (data.instructions) jsonBody.instructions = data.instructions;
     if (reframeMode) jsonBody.reframe_mode = reframeMode;
     if (letterboxZoom) jsonBody.letterbox_zoom = letterboxZoom;

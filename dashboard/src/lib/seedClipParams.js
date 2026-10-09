@@ -16,6 +16,7 @@ export function seedToggles(preselections) {
         logo: !!preselections?.logo,
         grade: !!(preselections?.grade && preselections.grade.preset && preselections.grade.preset !== 'none'),
         banner: !!(preselections?.banner && preselections.banner.enabled),
+        toptext: !!(preselections?.top_text && preselections.top_text.enabled),
     };
 }
 
@@ -34,6 +35,40 @@ export function seedBannerParams(preselections, sourceBanner) {
         return { enabled: true, platform: sourceBanner.platform, handle: sourceBanner.handle || '', y_pct: 0.85 };
     }
     return { enabled: false, platform: 'kick', handle: '', y_pct: 0.85 };
+}
+
+// Top-edge title banner (full-width text strip burned along the top of the
+// clip for its whole duration). Enabling is a plain default, not tied to the
+// source's platform, so the seed just mirrors the Create pre-selection (or a
+// disabled default). Keys mirror the backend top_text_params vocabulary.
+//
+// The text field is pre-filled with a real meeting-title example so a fresh
+// toggle already carries sensible copy — the operator edits it to their actual
+// title rather than staring at an empty field.
+export const TOP_TEXT_EXAMPLE = 'St. Johns BOCC Public comments — SB 686';
+
+export function seedTopTextParams(preselections) {
+    const t = preselections?.top_text;
+    if (t && t.enabled) {
+        return {
+            enabled: true,
+            text: t.text || TOP_TEXT_EXAMPLE,
+            size: t.size || 'M',
+            text_color: t.text_color || '#FFFFFF',
+            bg_enabled: t.bg_enabled !== false,
+            bg_color: t.bg_color || '#000000',
+            bg_opacity: t.bg_opacity ?? 0.55,
+        };
+    }
+    return {
+        enabled: false,
+        text: TOP_TEXT_EXAMPLE,
+        size: 'M',
+        text_color: '#FFFFFF',
+        bg_enabled: true,
+        bg_color: '#000000',
+        bg_opacity: 0.55,
+    };
 }
 
 export function seedGradeParams(preselections) {

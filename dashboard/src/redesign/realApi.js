@@ -5,7 +5,7 @@
 // strictly, and Vite accepts the explicit form unchanged.
 import { getApiUrl } from '../config.js';
 import { apiFetch } from '../lib/apiToken.js';
-import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams } from '../lib/seedClipParams.js';
+import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams, seedTopTextParams } from '../lib/seedClipParams.js';
 import { clipDownloadName } from '../lib/clipFilename.js';
 
 export { clipDownloadName };
@@ -81,11 +81,11 @@ export async function stopJob(jobId) {
   return res.json().catch(() => ({}));
 }
 
-export async function composeClip(jobId, index, { toggles, hook_params, subtitle_params, logo_params, grade_params, banner_params, drop_ranges }) {
+export async function composeClip(jobId, index, { toggles, hook_params, subtitle_params, logo_params, grade_params, banner_params, top_text_params, drop_ranges }) {
   const res = await apiFetch(getApiUrl(`/api/compose/${jobId}/${index}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toggles, hook_params, subtitle_params, logo_params, grade_params: grade_params || {}, banner_params: banner_params || {}, drop_ranges: drop_ranges || [] }),
+    body: JSON.stringify({ toggles, hook_params, subtitle_params, logo_params, grade_params: grade_params || {}, banner_params: banner_params || {}, top_text_params: top_text_params || {}, drop_ranges: drop_ranges || [] }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -148,6 +148,7 @@ export async function exportClip(jobId, index, clip, state, preselections) {
   const logo = state?.logoParams ?? seedLogoParams(preselections);
   const grade = state?.gradeParams ?? { preset: preselections?.grade?.preset || 'none' };
   const banner = state?.bannerParams ?? seedBannerParams(preselections);
+  const topText = state?.topTextParams ?? seedTopTextParams(preselections);
   // Resolve to the backend's ABSOLUTE `shorts` position, not the array
   // position `index` — they diverge once a manual-publish gap skips a
   // deleted_after_publish clip (see job_results._build_clips).
@@ -159,6 +160,7 @@ export async function exportClip(jobId, index, clip, state, preselections) {
     logo_params: toggles.logo ? logo : {},
     grade_params: toggles.grade ? grade : {},
     banner_params: toggles.banner ? banner : {},
+    top_text_params: toggles.toptext ? topText : {},
     drop_ranges: toggles.smartcut ? (state?.dropRanges || []) : [],
   });
   const href = safeResolveUrl(composed_url);
@@ -247,6 +249,20 @@ export async function listBackendJobIds() {
     const data = await res.json();
     return new Set((data.jobs || []).map((j) => j.jobId).filter(Boolean));
   } catch { return null; }
+}
+
+// Full backend history scan (jobId, timestamp, clipCount, clips, source, cost,
+// publishedCount). The UI History tab is normally seeded from localStorage as
+// jobs complete in THIS browser; this lets it reconcile against every job on
+// disk (e.g. a new browser/profile, or a job processed earlier), so backend
+// jobs stay openable instead of silently missing from the list.
+export async function fetchBackendHistory() {
+  try {
+    const res = await apiFetch(getApiUrl('/api/history'));
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.jobs || []).filter((j) => j && j.jobId);
+  } catch { return []; }
 }
 
 // --- config / settings ----------------------------------------------------
@@ -492,6 +508,11 @@ export function optsToPreselections(opts) {
     // modal once a job has actually run.
     banner: opts.banner
       ? { enabled: true, platform: opts.bannerPlatform || 'kick', handle: opts.bannerHandle || '', y_pct: opts.bannerYPct ?? 0.85 }
+      : false,
+    // Top-edge title banner (full-width text strip). Persisted as a
+    // pre-selection so each generated clip inherits the toggle + style.
+    top_text: opts.topText && (opts.topTextStyle?.text || '').trim()
+      ? { enabled: true, ...(opts.topTextStyle || {}) }
       : false,
   };
 }

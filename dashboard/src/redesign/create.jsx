@@ -2,11 +2,12 @@
 import { useState, useRef } from 'react';
 import { Icon, Btn, Panel, Segmented, Switch, Stepper } from './primitives';
 import { Hero } from './chrome';
-import { LANGUAGES, GEMINI_MODELS, HOOK_STYLE_DEFAULT } from './data';
+import { LANGUAGES, GEMINI_MODELS, HOOK_STYLE_DEFAULT, TOP_TEXT_DEFAULT } from './data';
 import { HookStyleControls, HookPreview } from './hookStyle';
 import { SubtitleControls } from './subtitleControls';
 import { LogoControls, GradeControls } from './layerControls';
 import { BannerControls } from './bannerControls';
+import { TopTextControls, TopTextPreview } from './topTextControls';
 import { validateCreateOptions } from '../lib/createValidation';
 
 function PresetCards({ presets, active, defaultId, onPick, onSetDefault, onDelete, onSaveCurrent }) {
@@ -51,7 +52,7 @@ function PresetCards({ presets, active, defaultId, onPick, onSetDefault, onDelet
   );
 }
 
-function SourcePanel({ opts, set }) {
+function SourcePanel({ opts, set, localInputDir = '' }) {
   const [drag, setDrag] = useState(false);
   const fileInput = useRef(null);
   const batchInput = useRef(null);
@@ -60,7 +61,7 @@ function SourcePanel({ opts, set }) {
   const totalQueued = batchLines.length + batchFileCount;
   const pickFile = (f) => f && set({ file: f, fileName: f.name });
   return (
-    <Panel title="Source" sub="Paste a link or drop a file" icon="link"
+    <Panel title="Source" sub="Paste a link, drop a file, or use a server-side path" icon="link"
       headRight={
         <Segmented value={opts.mode} onChange={(id) => set({ mode: id })}
           options={[{ id: 'single', label: 'Single', icon: 'square' }, { id: 'batch', label: 'Batch', icon: 'layers' }]} />
@@ -68,7 +69,7 @@ function SourcePanel({ opts, set }) {
       {opts.mode === 'single' ? (
         <div>
           <Segmented full value={opts.source} onChange={(id) => set({ source: id })}
-            options={[{ id: 'url', label: 'URL', icon: 'globe' }, { id: 'file', label: 'Upload', icon: 'file-up' }]} />
+            options={[{ id: 'url', label: 'URL', icon: 'globe' }, { id: 'file', label: 'Upload', icon: 'file-up' }, { id: 'local', label: 'Server', icon: 'server' }]} />
           <div style={{ height: 14 }} />
           {opts.source === 'url' ? (
             <div className="input">
@@ -85,6 +86,22 @@ function SourcePanel({ opts, set }) {
               }}>
                 <Icon n="clipboard" />Paste
               </button>
+            </div>
+          ) : opts.source === 'local' ? (
+            <div>
+              <div className="input">
+                <Icon n="server" />
+                <input value={opts.localPath} className="mono"
+                  placeholder={`${localInputDir || '/app/videos'}/recording.mp4`}
+                  aria-label="Server-side file path"
+                  onChange={(e) => set({ localPath: e.target.value })} />
+              </div>
+              <div className="s-sub" style={{ marginTop: 8 }}>
+                Clip a file already on the backend (NFS mount). The path must live under the
+                server&apos;s configured{' '}
+                <span className="chip">{localInputDir || 'LOCAL_INPUT_DIR'}</span> — no upload,
+                no 16 GB transfer.
+              </div>
             </div>
           ) : (
             <div className={'dropzone' + (opts.file ? ' has' : drag ? ' drag' : '')}
@@ -262,11 +279,24 @@ function BannerConfig({ opts, set }) {
   );
 }
 
+function TopTextConfig({ opts, set }) {
+  const value = { ...TOP_TEXT_DEFAULT, ...(opts.topTextStyle || {}) };
+  const setValue = (partial) => set({ topTextStyle: { ...value, ...partial } });
+  return (
+    <div className="cfg-drawer fade-in">
+      <TopTextPreview text={value.text} value={value} />
+      <div style={{ marginTop: 12 }} />
+      <TopTextControls value={value} onChange={setValue} />
+    </div>
+  );
+}
+
 function OptionsPanel({ opts, set }) {
   const [subCfg, setSubCfg] = useState(false);
   const [hookCfg, setHookCfg] = useState(false);
   const [logoCfg, setLogoCfg] = useState(false);
   const [bannerCfg, setBannerCfg] = useState(false);
+  const [topTextCfg, setTopTextCfg] = useState(false);
   return (
     <Panel title="Recipe" sub="What ClippyMe makes from each video" icon="sliders-horizontal">
       <div className="label" style={{ marginBottom: 4 }}>Output</div>
@@ -363,6 +393,15 @@ function OptionsPanel({ opts, set }) {
       <OptRow icon="rss" label="Attribution banner" desc="Platform logo + handle burned bottom of clip"
         on={opts.banner} set={(v) => set({ banner: v })} onConfig={() => setBannerCfg(!bannerCfg)} configActive={bannerCfg} />
       {opts.banner && bannerCfg && <BannerConfig opts={opts} set={set} />}
+      <OptRow icon="panel-top" label="Top banner" desc="Full-width title strip along the top"
+        on={opts.topText} set={(v) => {
+          set({ topText: v });
+          // Seeding the enabled state also resolves the style object (so a
+          // preset that dropped topTextStyle still carries the example text
+          // and defaults the moment the banner is turned on).
+          if (v) set({ topTextStyle: { ...TOP_TEXT_DEFAULT, ...(opts.topTextStyle || {}) } });
+        }} onConfig={() => setTopTextCfg(!topTextCfg)} configActive={topTextCfg} />
+      {opts.topText && topTextCfg && <TopTextConfig opts={opts} set={set} />}
       <div className="opt">
         <div className="oico"><Icon n="palette" /></div>
         <div className="otxt"><div className="ot">Colour grade</div><div className="od">Cinematic colour pass on every clip</div></div>
@@ -400,7 +439,7 @@ function SummaryBar({ opts, ready, count, onCreate, error }) {
   );
 }
 
-export function CreateView({ opts, set, onPickPreset, onCreate, presets, defaultId, onSetDefault, onDelete, onSaveCurrent }) {
+export function CreateView({ opts, set, onPickPreset, onCreate, presets, defaultId, onSetDefault, onDelete, onSaveCurrent, localInputDir = '' }) {
   const validation = validateCreateOptions(opts);
   const ready = validation.valid;
   const nSources = Math.max(1, validation.sourceCount);
@@ -412,7 +451,7 @@ export function CreateView({ opts, set, onPickPreset, onCreate, presets, default
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* Order: pick a source first, then optionally start from a preset,
             then fine-tune the recipe by hand. */}
-        <SourcePanel opts={opts} set={set} />
+        <SourcePanel opts={opts} set={set} localInputDir={localInputDir} />
         <div>
           <div className="label" style={{ marginBottom: 12 }}>Start from a preset, or set everything by hand below</div>
           <PresetCards presets={presets} active={opts.preset} defaultId={defaultId}

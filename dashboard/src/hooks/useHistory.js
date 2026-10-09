@@ -17,6 +17,40 @@ export function useHistory() {
     writeStoredJson(HISTORY_KEY, value);
   }, [history]);
 
+  // Merge the backend's full job scan into the localStorage list so jobs that
+  // exist on disk stay openable even when this browser never ran them (fresh
+  // profile, cleared storage, or a job processed earlier). Local entries win
+  // for the same jobId (they carry this-browser state); backend-only jobs are
+  // appended as 'complete' rows the user can open.
+  const seedFromBackend = useCallback((backendJobs) => {
+    if (!Array.isArray(backendJobs) || !backendJobs.length) return;
+    const local = normalize(history);
+    const byId = new Map(local.map((e) => [e.jobId, e]));
+    let added = 0;
+    for (const j of backendJobs) {
+      if (!j.jobId || byId.has(j.jobId)) continue;
+      const source = j.source || j.title || j.jobId;
+      byId.set(j.jobId, {
+        jobId: j.jobId,
+        status: 'complete',
+        timestamp: Number(j.timestamp) || Date.now(),
+        source,
+        sourceType: /^https?:\/\//i.test(source) ? 'url' : 'file',
+        title: source,
+        clipCount: j.clipCount || 0,
+        cost: j.cost != null ? Number(j.cost) : null,
+        publishedCount: j.publishedCount || 0,
+      });
+      added++;
+    }
+    if (!added) return;
+    const merged = [...byId.values()]
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      .slice(0, HISTORY_MAX_ITEMS);
+    setHistoryState(merged);
+    writeStoredJson(HISTORY_KEY, merged);
+  }, [history]);
+
   const saveToHistory = useCallback((entry) => {
     if (!entry?.jobId) return;
     setHistoryState((previous) => {
@@ -48,5 +82,5 @@ export function useHistory() {
     removeStoredValue(HISTORY_KEY);
   }, [purgeJobStorage]);
 
-  return { history, setHistory: replaceHistory, saveToHistory, deleteFromHistory, clearHistory };
+  return { history, setHistory: replaceHistory, saveToHistory, seedFromBackend, deleteFromHistory, clearHistory };
 }

@@ -164,6 +164,41 @@ test('adding a Zernio profile marks it default when none exist', async () => {
   expect(payload[0].is_default).toBe(true);
 });
 
+test('YouTube upload defaults load per profile and round-trip through save', async () => {
+  getConfig.mockResolvedValue(EMPTY_CONFIG);
+  getZernio.mockResolvedValue({
+    configured: true,
+    default_profile_id: 'p1',
+    profiles: [
+      {
+        id: 'p1', name: 'Client A', api_key_masked: 'sk_ab...cd', is_default: true,
+        accounts: { youtube: 'yt1' }, timezone: 'Europe/Rome',
+        youtube: { category_id: '25', made_for_kids: false, contains_synthetic_media: true, visibility: 'public' },
+      },
+    ],
+  });
+  saveZernio.mockResolvedValue({ configured: true, profiles: [] });
+  mount();
+  await waitFor(() => expect(screen.getByDisplayValue('Client A')).toBeInTheDocument());
+
+  // Category defaults to the stored News & Politics id.
+  const cat = screen.getByLabelText('Client A YouTube category');
+  expect(cat.value).toBe('25');
+  // Change it and flip the AI-content disclosure toggle.
+  fireEvent.change(cat, { target: { value: '24' } });
+  fireEvent.click(screen.getByLabelText('Client A contains AI-generated content'));
+
+  fireEvent.click(zernioSave());
+  await waitFor(() => expect(saveZernio).toHaveBeenCalledTimes(1));
+  const saved = saveZernio.mock.calls[0][0].profiles[0];
+  expect(saved.youtube).toMatchObject({
+    category_id: '24',
+    contains_synthetic_media: false, // toggled off
+    made_for_kids: false,
+    visibility: 'public',
+  });
+});
+
 // HistoryView — title + per-job "published" badge (derived from
 // history_service.scan_history's additive `title`/`publishedCount` fields).
 test('history row shows the video title and a published-count badge when clips were published', () => {
