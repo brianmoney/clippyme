@@ -26,6 +26,7 @@ from clippyme.domain.clip_resolve import composed_clip_basename, resolve_clip
 from clippyme.domain.errors import ClippyMeError
 from clippyme.domain.job_artifacts import load_job_metadata, record_clip_publish
 from clippyme.domain.live_monitor import LiveMonitor
+from clippyme.domain import publish_service
 from clippyme.domain.publish_service import publish_clip_flow
 from clippyme.integrations import social_publisher
 
@@ -449,3 +450,154 @@ def test_publish_with_compose_first_does_not_deadlock_on_the_clip_lock(tmp_path,
     asyncio.run(scenario())
 
     assert uploads == [b"HOOK:fresh:RAW0"]
+
+
+# ---------------------------------------------------------------------------
+# B1 — publication idempotency (one intent per Publish)
+# ---------------------------------------------------------------------------
+
+INTENT = "0123456789abcdef0123456789abcdef"
+
+
+def _capture_publish_kwargs(monkeypatch):
+    """Like ``_capture_uploads`` but keeps each call's kwargs, so a test can
+    read the Idempotency-Key the flow derived."""
+    calls = []
+
+    def fake_publish_clip(*, clip_path, **kwargs):
+        calls.append(kwargs)
+        return {"post_id": f"p{len(calls)}"}
+
+    monkeypatch.setattr(social_publisher, "publish_clip", fake_publish_clip)
+    return calls
+
+
+def test_manual_request_id_is_stable_and_scoped():
+    """Same intent → same key (so a retry replays); different clip or job →
+    different key (so two clips can never share one provider-side post)."""
+    a = publish_service.manual_request_id(JOB_ID, 0, INTENT)
+    assert a == publish_service.manual_request_id(JOB_ID, 0, INTENT)
+    assert a.startswith("manual-") and len(a) == len("manual-") + 48
+    assert a != publish_service.manual_request_id(JOB_ID, 1, INTENT)
+    assert a != publish_service.manual_request_id(JOB_ID, 0, "f" * 32)
+
+
+def test_a_repeated_intent_replays_instead_of_posting_again(tmp_path, monkeypatch):
+    """The core guarantee: a retry of one Publish (double click, lost response,
+    tab reload) must not create a second post on the provider."""
+    root = str(tmp_path)
+    _make_job(root, ["A"])
+    calls = _capture_publish_kwargs(monkeypatch)
+
+    async def scenario():
+        return (await _publish(root, 0, intent_id=INTENT),
+                await _publish(root, 0, intent_id=INTENT))
+
+    first, second = asyncio.run(scenario())
+
+    assert len(calls) == 1, "the provider must be called exactly once"
+    assert first["success"] is True and not first.get("replayed")
+    assert second["replayed"] is True
+    assert second["post_id"] == first["post_id"]
+
+
+def test_the_derived_key_reaches_the_provider(tmp_path, monkeypatch):
+    root = str(tmp_path)
+    _make_job(root, ["A"])
+    calls = _capture_publish_kwargs(monkeypatch)
+
+    asyncio.run(_publish(root, 0, intent_id=INTENT))
+
+    assert calls[0]["request_id"] == publish_service.manual_request_id(JOB_ID, 0, INTENT)
+
+
+def test_a_recorded_intent_is_persisted_on_the_clip(tmp_path, monkeypatch):
+    root = str(tmp_path)
+    _make_job(root, ["A"])
+    _capture_publish_kwargs(monkeypatch)
+
+    asyncio.run(_publish(root, 0, intent_id=INTENT))
+
+    records = _meta(root)["shorts"][0]["published"]
+    assert [r.get("intent_id") for r in records] == [INTENT]
+
+
+def test_a_new_intent_is_a_deliberate_re_publish(tmp_path, monkeypatch):
+    """After the client clears its intent, publishing again posts again."""
+    root = str(tmp_path)
+    _make_job(root, ["A"])
+    calls = _capture_publish_kwargs(monkeypatch)
+
+    async def scenario():
+        await _publish(root, 0, intent_id=INTENT)
+        await _publish(root, 0, intent_id="f" * 32)
+
+    asyncio.run(scenario())
+
+    assert len(calls) == 2
+
+
+def test_no_intent_keeps_the_previous_behaviour(tmp_path, monkeypatch):
+    """Callers that send no intent (older clients, the live monitor) are
+    unaffected — no key is derived and every call posts."""
+    root = str(tmp_path)
+    _make_job(root, ["A"])
+    calls = _capture_publish_kwargs(monkeypatch)
+
+    async def scenario():
+        await _publish(root, 0)
+        await _publish(root, 0)
+
+    asyncio.run(scenario())
+
+    assert len(calls) == 2
+    assert calls[0]["request_id"] is None
+    assert "intent_id" not in _meta(root)["shorts"][0]["published"][0]
+
+
+def test_create_post_sends_both_idempotency_headers(monkeypatch):
+    """Zernio replays ``x-request-id`` only when the media URL matches, and
+    every retry re-presigns a new URL — so the key-only ``Idempotency-Key``
+    must ride along too."""
+    sent = {}
+
+    class _Resp:
+        status_code = 201
+        text = "{}"
+        headers: dict = {}
+
+        def json(self):
+            return {"post": {"_id": "p1"}}
+
+    client = social_publisher.ZernioClient("sk_test_key")
+
+    def fake_request(method, url, **kwargs):
+        sent.update(kwargs.get("headers") or {})
+        return _Resp()
+
+    monkeypatch.setattr(client._session, "request", fake_request)
+    client.create_post(content="c", media_items=[], platforms=[], request_id="manual-abc")
+
+    assert sent.get("Idempotency-Key") == "manual-abc"
+    assert sent.get("x-request-id") == "manual-abc"
+
+
+def test_a_replayed_post_is_read_from_existing_post(tmp_path, monkeypatch):
+    """An idempotent replay answers 200 with the original post under
+    ``existingPost``; the post id must still be extracted."""
+    monkeypatch.setattr(
+        social_publisher.ZernioClient, "presign_upload",
+        lambda self, *a, **k: {"uploadUrl": "https://cdn.example.com/u", "publicUrl": "https://cdn.example.com/p"})
+    monkeypatch.setattr(social_publisher.ZernioClient, "upload_to_presigned",
+                        lambda self, *a, **k: None)
+    monkeypatch.setattr(social_publisher.ZernioClient, "create_post",
+                        lambda self, **k: {"existingPost": {"_id": "replayed1", "status": "scheduled"}})
+
+    clip = os.path.join(str(tmp_path), "c.mp4")
+    _write(clip, b"x")
+    result = social_publisher.publish_clip(
+        api_key="sk_test_key", clip_path=clip, title="t", caption="c",
+        platform_targets=[{"platform": "tiktok", "accountId": "a1"}],
+        schedule_mode="now", request_id="manual-abc")
+
+    assert result["post_id"] == "replayed1"

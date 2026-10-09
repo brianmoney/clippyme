@@ -468,6 +468,11 @@ class PublishRequest(BaseModel):
     start_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     timezone: str = Field("America/New_York", max_length=64)
     profile_id: Optional[str] = Field(None, max_length=64)
+    # One manual publication intent: the client reuses it for every retry of
+    # the same Publish and mints a new one for a deliberate re-publish. The
+    # server turns it into the Zernio Idempotency-Key, so a retry after a lost
+    # response replays the original post instead of creating a second one.
+    intent_id: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9-]{8,64}$")
     tiktok_settings: Optional[dict] = None
     compose_first: bool = False
     toggles: Optional[dict] = None

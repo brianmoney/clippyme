@@ -9,6 +9,7 @@ import { clipVideoSrc } from './realApi';
 import { publishClip, getZernio } from './realApi';
 import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedBannerParams, seedTopTextParams } from '../lib/seedClipParams';
 import { localDatePlus } from '../lib/scheduleDates';
+import { clearPublishIntent, publishIntent } from '../lib/publishIntent';
 import { useModalA11y } from './useModalA11y';
 
 // redesign plat id → backend platform + account key. Exported so other
@@ -181,7 +182,13 @@ export function PublishModal({ clips, jobId, clipStates = {}, preselections, onC
       // clipStates/progress, which are unaffected by a manual-publish gap.
       const apiIdx = clip._apiIdx ?? idx;
       try {
-        await publishClip(jobId, apiIdx, buildBody(clip, idx, batchPos, scheduleOn));
+        // Same intent for every retry of THIS Publish; a new one is minted only
+        // once the server confirmed the post, so publishing again after that is
+        // a deliberate re-publish. A lost response, a double click or a reload
+        // therefore replays the original post instead of creating a second one.
+        const intent_id = publishIntent(jobId, apiIdx);
+        await publishClip(jobId, apiIdx, { ...buildBody(clip, idx, batchPos, scheduleOn), intent_id });
+        clearPublishIntent(jobId, apiIdx);
         setProgress((p) => ({ ...p, [idx]: { state: 'done' } }));
         onPublished?.(idx);
         return true;

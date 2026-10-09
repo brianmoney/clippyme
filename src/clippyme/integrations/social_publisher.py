@@ -164,10 +164,17 @@ _SCHEDULE_LOCK = threading.Lock()
 class ZernioError(Exception):
     """Wraps any HTTP / API failure from Zernio."""
 
-    def __init__(self, message: str, status_code: Optional[int] = None, body: Optional[str] = None):
+    def __init__(self, message: str, status_code: Optional[int] = None, body: Optional[str] = None,
+                 code: Optional[str] = None, retry_after: Optional[str] = None):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+        # The JSON body's ``code``, read before ``body`` is truncated for the
+        # UI — callers need it to tell a 409 ``idempotency_conflict`` apart
+        # from any other 409.
+        self.code = code
+        # Raw Retry-After header (Zernio sends it with 409 idempotency_conflict).
+        self.retry_after = retry_after
 
 
 class ZernioClient:
@@ -210,10 +217,21 @@ class ZernioClient:
         except requests.RequestException as e:
             raise ZernioError(f"network error: {e}") from e
         if not 200 <= r.status_code < 300:
+            # Read the JSON ``code`` (and Retry-After) BEFORE truncating the
+            # body for the UI: callers must be able to recognise a 409
+            # ``idempotency_conflict``, whose first request is still in flight.
+            try:
+                payload = r.json()
+            except ValueError:
+                payload = None
+            code = payload.get("code") if isinstance(payload, dict) else None
+            retry_after = (getattr(r, "headers", None) or {}).get("Retry-After")
             raise ZernioError(
                 f"Zernio {method} {path} → HTTP {r.status_code}",
                 status_code=r.status_code,
                 body=self._scrub_secrets(r.text[:500]),
+                code=code if isinstance(code, str) else None,
+                retry_after=str(retry_after)[:64] if retry_after else None,
             )
         try:
             return r.json()
@@ -288,8 +306,16 @@ class ZernioClient:
         tiktok_settings: Optional[dict] = None,
         title: Optional[str] = None,
         tags: Optional[list[str]] = None,
+        request_id: Optional[str] = None,
     ) -> dict:
-        """POST /v1/posts — create the post (scheduled or immediate)."""
+        """POST /v1/posts — create the post (scheduled or immediate).
+
+        ``request_id`` is sent as ``Idempotency-Key``: a repeat within 24 h
+        returns the original post, matched on the key alone. ``x-request-id``
+        alone is not enough — it replays only when the media URL matches too,
+        and every retry re-uploads (a fresh presign → a new URL). Both headers
+        are sent so either contract works.
+        """
         body: dict[str, Any] = {
             "content": content,
             "mediaItems": media_items,
@@ -306,6 +332,10 @@ class ZernioClient:
             body["scheduledFor"] = scheduled_for
         if tiktok_settings:
             body["tiktokSettings"] = tiktok_settings
+        if request_id:
+            return self._request("POST", "/posts", json=body,
+                                 headers={"Idempotency-Key": str(request_id),
+                                          "x-request-id": str(request_id)})
         return self._request("POST", "/posts", json=body)
 
 
@@ -537,6 +567,7 @@ def publish_clip(
     scheduler: Optional[SmartScheduler] = None,
     start_date: Optional[str] = None,
     youtube_defaults: Optional[dict] = None,
+    request_id: Optional[str] = None,
 ) -> dict:
     """Publish a single clip via Zernio.
 
@@ -731,6 +762,7 @@ def publish_clip(
                 timezone=timezone,
                 publish_now=publish_now,
                 tiktok_settings=tiktok_settings,
+                request_id=request_id,
             )
     else:
         if schedule_mode == "manual":
@@ -745,10 +777,14 @@ def publish_clip(
             timezone=timezone,
             publish_now=publish_now,
             tiktok_settings=tiktok_settings,
+            request_id=request_id,
         )
 
-    # 4. Extract post id (response shape varies)
-    post_obj = response.get("post") if isinstance(response, dict) else None
+    # 4. Extract post id (response shape varies; an idempotent replay answers
+    # 200 with the original post under ``existingPost``)
+    post_obj = None
+    if isinstance(response, dict):
+        post_obj = response.get("post") or response.get("existingPost")
     if isinstance(post_obj, dict):
         post_id = post_obj.get("_id") or post_obj.get("id")
         status = post_obj.get("status", "scheduled")
