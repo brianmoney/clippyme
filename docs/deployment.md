@@ -77,3 +77,4 @@ the [configuration reference](reference/configuration.md).
 | API calls return 403 when the dashboard is opened from another device | Its address is not in `ALLOWED_ORIGINS`, or the containers were not recreated (`docker compose down`, then `up -d`) after editing `.env`; see [Network exposure](#network-exposure). |
 | Smart Cut result looks like a plain cut | The auto-editor binary is missing or failed; ClippyMe fell back to ffmpeg. Rebuild the image. |
 | Permission denied on `data/` | Restart the backend container; the entrypoint repairs ownership on start. |
+| Backend is exited after a host reboot and `docker inspect` shows `open /mnt/Synology-Documents: no such device` | The NAS NFS share was not mounted yet when Docker tried to create the container, and Docker does not retry that failure. Once the share is readable, run `docker compose up -d`. The host's `clippyme.service` automates this: it waits for `/mnt/Synology-Documents`, then runs compose. |
