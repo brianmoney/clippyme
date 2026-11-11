@@ -17,6 +17,7 @@ from clippyme.domain.job_results import (
     MODEL_ID_RE,
 )
 from clippyme.domain.errors import ValidationError as ClippyMeValidationError
+from clippyme.domain.job_recipe import validate_recipe
 from clippyme.domain.local_input import validate_local_path
 from clippyme.netutil import resolve_host_addresses
 from clippyme.schemas import ViralClip, ViralClipsResponse  # noqa: F401
@@ -177,6 +178,16 @@ class ProcessRequest(BaseModel):
     # Editor's requested clip count. Passed into the selection prompt (legacy)
     # and used as the review ceiling (two-stage); it is a target, not a quota.
     target_clips: Optional[int] = Field(None, ge=1, le=50)
+    # The Create-tab recipe (subtitles/hook/logo/grade/…). Persisted with the
+    # job so previews, downloads and publishing keep the chosen layers even
+    # when the job is opened from a different browser or after a history
+    # restore. Optional so API-only callers can omit it.
+    preselections: Optional[dict] = None
+
+    @field_validator("preselections")
+    @classmethod
+    def _validate_preselections(cls, value):
+        return validate_recipe(value)
 
     @field_validator("url")
     @classmethod
@@ -227,6 +238,14 @@ class BatchRequest(BaseModel):
     )
     min_duration: Optional[float] = Field(None, gt=0, le=300)
     target_clips: Optional[int] = Field(None, ge=1, le=50)
+    # Same Create recipe as ProcessRequest; each URL job gets its own copy so
+    # History can restore the layers without the submitting browser.
+    preselections: Optional[dict] = None
+
+    @field_validator("preselections")
+    @classmethod
+    def _validate_preselections(cls, value):
+        return validate_recipe(value)
 
     @field_validator("urls")
     @classmethod
@@ -449,6 +468,17 @@ def validate_publish_platforms(value: List[dict]) -> List[dict]:
         if "platformSpecificData" in item:
             _validate_overlay_params(item["platformSpecificData"])
     return value
+
+
+class PreselectionsUpdateRequest(BaseModel):
+    """Write-through/backfill of an existing job's Create recipe."""
+
+    preselections: dict
+
+    @field_validator("preselections")
+    @classmethod
+    def _validate_preselections(cls, value):
+        return validate_recipe(value)
 
 
 class ComposeRequest(BaseModel):

@@ -14,7 +14,7 @@ import { PublishModal } from './publish';
 import { HistoryView, SettingsView, ApiKeyModal } from './views';
 import { LiveMonitorView } from './live';
 import { EditClipModal } from './captions';
-import { optsToPreselections, restoreJob, listBackendJobIds, fetchBackendHistory, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip, getViralModels, getConfig } from './realApi';
+import { optsToPreselections, restoreJob, listBackendJobIds, fetchBackendHistory, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip, getViralModels, getConfig, saveJobPreselections } from './realApi';
 import { allPresets, getDefaultPresetOpts, getDefaultPresetId, saveUserPreset, deleteUserPreset, setDefaultPreset } from './presets';
 import { GEMINI_MODELS, HOOK_STYLE_DEFAULT, TOP_TEXT_DEFAULT } from './data';
 import { clipStateToParams, buildBulkPlan } from '../lib/bulkApply';
@@ -120,6 +120,9 @@ export default function RedesignApp() {
   // Track all auto-dismiss timer ids so they can be cleared if the component
   // unmounts before any timer fires (prevents setState on an unmounted tree).
   const toastTimerIds = useRef([]);
+  // Job ids whose browser recipe has already been written through to the
+  // backend, so the write-through effect cannot loop.
+  const recipeBackfillRef = useRef(null);
   useEffect(() => () => { toastTimerIds.current.forEach(clearTimeout); }, []);
   const [publishClips, setPublishClips] = useState(null);
   const [editClip, setEditClip] = useState(null);
@@ -170,6 +173,38 @@ export default function RedesignApp() {
       localStorage.setItem(`clippyme_preselections_job_${jobId}`, JSON.stringify(preselections));
     } catch { /* quota/serialisation failure — history defaults are best-effort */ }
   }, [jobId, preselections]);
+  // The recipe is persisted with the job server-side. Adopt it when this
+  // browser has nothing for the job (history opened on another device, or
+  // localStorage was cleared) so previews/downloads still apply subtitles,
+  // hooks and the rest of the Create recipe.
+  useEffect(() => {
+    if (preselections || !results?.preselections) return;
+    let stored = null;
+    try {
+      stored = jobId ? localStorage.getItem(`clippyme_preselections_job_${jobId}`) : null;
+    } catch { /* storage unavailable */ }
+    if (stored) return;
+    setPreselectionsRaw(results.preselections);
+    try {
+      if (jobId) {
+        localStorage.setItem(
+          `clippyme_preselections_job_${jobId}`,
+          JSON.stringify(results.preselections),
+        );
+      }
+    } catch { /* quota/serialisation failure — best-effort */ }
+  }, [jobId, results, preselections]);
+  // Jobs created before the recipe was stored server-side only have it in this
+  // browser. Write it through once so other devices (and a fresh profile) can
+  // still apply the same subtitles/hook/logo layers.
+  useEffect(() => {
+    if (!jobId || !preselections || !results || results.preselections) return;
+    if (recipeBackfillRef.current === jobId) return;
+    recipeBackfillRef.current = jobId;
+    saveJobPreselections(jobId, preselections).catch(() => {
+      if (recipeBackfillRef.current === jobId) recipeBackfillRef.current = null;
+    });
+  }, [jobId, results, preselections]);
   useEffect(() => {
     if (tab !== 'create') return undefined;
     let alive = true;
@@ -464,8 +499,12 @@ export default function RedesignApp() {
       setProcessingMedia({ type: h.sourceType || 'url', payload: h.source });
       try {
         const saved = localStorage.getItem(`clippyme_preselections_job_${h.jobId}`);
-        setPreselectionsRaw(saved ? JSON.parse(saved) : null);
-      } catch { setPreselectionsRaw(null); }
+        // Prefer the browser copy (it may contain a newer manual tweak), then
+        // the recipe persisted with the job on the backend.
+        setPreselectionsRaw(
+          saved ? JSON.parse(saved) : (data.result?.preselections || null),
+        );
+      } catch { setPreselectionsRaw(data.result?.preselections || null); }
       setViewingHistory(true);
     } catch (err) {
       // The clip files are gone from disk (typically a docker rebuild/cleanup

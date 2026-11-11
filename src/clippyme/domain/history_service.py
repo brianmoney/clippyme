@@ -7,6 +7,7 @@ import re
 from typing import List
 
 from clippyme.domain.clip_resolve import clip_filename_for
+from clippyme.domain.job_recipe import load_recipe
 
 logger = logging.getLogger("clippyme")
 
@@ -90,6 +91,9 @@ def scan_history(output_dir: str) -> List[dict]:
                         "source": source,
                         "title": source,
                         "publishedCount": published_count,
+                        # Lets the dashboard restore subtitles/hook defaults
+                        # straight from the history payload.
+                        "preselections": load_recipe(job_dir),
                     }
                 )
             except Exception:

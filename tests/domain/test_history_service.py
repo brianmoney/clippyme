@@ -84,6 +84,16 @@ def test_scan_history_reports_clip_count_and_cost(tmp_path):
     assert out[0]["cost"] == 0.42
 
 
+def test_scan_history_includes_persisted_recipe(tmp_path):
+    from clippyme.domain.job_recipe import save_recipe
+
+    job_dir = _make_job(str(tmp_path), VALID_UUID, clips=[{"start": 0, "end": 10}])
+    recipe = {"subtitles": {"mode": "karaoke", "preset": "hormozi_bold"}}
+    save_recipe(job_dir, recipe)
+    out = hs.scan_history(str(tmp_path))
+    assert out[0]["preselections"] == recipe
+
+
 def test_scan_history_surfaces_title_matching_source(tmp_path):
     _make_job(str(tmp_path), VALID_UUID, clips=[{"start": 0, "end": 10}])
     out = hs.scan_history(str(tmp_path))

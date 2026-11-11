@@ -235,6 +235,18 @@ export async function restoreJob(jobId) {
   return res.json(); // { result: { clips, cost_analysis } }
 }
 
+// Write-through the browser's recipe to the job so another device (or a
+// cleared localStorage) can still apply subtitles/hook/logo defaults.
+export async function saveJobPreselections(jobId, preselections) {
+  const res = await apiFetch(getApiUrl(`/api/history/${jobId}/preselections`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preselections }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 // Permanently delete a job's output directory + uploaded source from disk.
 // The History delete button MUST call this (and only dismiss the localStorage
 // entry on success/404) — removing just the list entry orphaned the files.

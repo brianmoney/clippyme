@@ -56,6 +56,9 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
     if (model) jsonBody.model = model;
     if (minDuration) jsonBody.min_duration = minDuration;
     if (targetClips) jsonBody.target_clips = targetClips;
+    // Persist the Create recipe with the job (subtitles/hook/logo/…), not only
+    // in this browser's localStorage.
+    if (data.preselections) jsonBody.preselections = data.preselections;
     body = JSON.stringify(jsonBody);
   } else {
     if (data.payload?.size > 16 * 1024 * 1024 * 1024) throw new Error('File too large. Maximum size is 16 GB.');
@@ -71,6 +74,7 @@ export async function submitProcessJob(data, apiKey, { signal } = {}) {
     if (model) formData.append('model', model);
     if (minDuration) formData.append('min_duration', String(minDuration));
     if (targetClips) formData.append('target_clips', String(targetClips));
+    if (data.preselections) formData.append('preselections', JSON.stringify(data.preselections));
     body = formData;
   }
 
@@ -91,6 +95,7 @@ export async function submitBatchJob(data, apiKey, { signal } = {}) {
   if ((data.preselections?.model || '').trim()) batchBody.model = data.preselections.model.trim();
   if (data.preselections?.min_duration) batchBody.min_duration = Number(data.preselections.min_duration);
   if (data.preselections?.target_clips) batchBody.target_clips = Number(data.preselections.target_clips);
+  if (data.preselections) batchBody.preselections = data.preselections;
   const res = await apiFetch(getApiUrl('/api/batch'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Gemini-Key': apiKey },

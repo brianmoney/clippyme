@@ -345,7 +345,7 @@ Static mounts: `/videos`, `/thumbnails`, `/fonts` (read-only).
 
 ## Editing toggles (recipe → preview → download)
 
-The Create-page recipe (subtitles, hook, logo, grade, banner, top text, Smart Cut) is applied automatically to each finished clip once, so the results preview reflects the options you chose. Download and publish reuse that composed file; changing a per-clip setting recomposes from the same params. The raw reframed clip stays on disk for re-editing.
+The Create-page recipe (subtitles, hook, logo, grade, banner, top text, Smart Cut) is stored with the job (`preselections.json` beside the job metadata) and applied automatically to each finished clip once, so the results preview reflects the options you chose. Download and publish reuse that composed file; changing a per-clip setting recomposes from the same params. Because the recipe travels with the job, opening it from History on another device (or after clearing browser data) applies the same layers. The raw reframed clip stays on disk for re-editing.
 
 Every finished clip has an **Edit & reprocess** panel, one button on the clip card opens a **tabbed modal** (Reframe · Grade · Captions · Hook · Smart Cut · Trim · Logo) that gathers all the options in one place so you set everything first and apply once, instead of the clip reprocessing on every tweak. The compose layers:
 

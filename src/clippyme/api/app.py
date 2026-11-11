@@ -47,6 +47,7 @@ from clippyme.domain import job_control
 from clippyme.domain.job_actions import cancel_job_action, stop_job_action
 from clippyme.domain.job_journal import JOURNAL_FILENAME, make_journal_writer, recover_jobs
 from clippyme.domain.job_runner import make_run_job
+from clippyme.domain.job_recipe import save_recipe
 from clippyme.domain.job_submission import QueueFullError, submit_job
 from clippyme.domain.publish_service import publish_clip_flow
 from clippyme.api.schemas import (
@@ -59,6 +60,7 @@ from clippyme.api.schemas import (
     LiveMonitorStartRequest,
     LiveMonitorStopRequest,
     ProcessRequest,
+    PreselectionsUpdateRequest,
     PublishRequest,
     ReframeRequest,
     _validate_drop_ranges,
@@ -357,6 +359,7 @@ async def process_endpoint(
     model = None
     min_duration = None
     target_clips = None
+    preselections = None
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
@@ -381,6 +384,7 @@ async def process_endpoint(
         model = validated.model
         min_duration = validated.min_duration
         target_clips = validated.target_clips
+        preselections = validated.preselections
 
     # For multipart/form-data uploads, extract reframe_mode + language from form fields
     if "multipart/form-data" in content_type:
@@ -409,6 +413,12 @@ async def process_endpoint(
                 target_clips = int(tc)
             except ValueError:
                 raise HTTPException(status_code=400, detail="target_clips must be an integer")
+        raw_pre = form.get("preselections")
+        if raw_pre not in (None, ""):
+            try:
+                preselections = json.loads(raw_pre)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="preselections must be valid JSON")
         # Validate the multipart values through the same schema for
         # consistency — we drop the url requirement since we're using
         # an uploaded file path.
@@ -425,6 +435,7 @@ async def process_endpoint(
                 "model": model or None,
                 "min_duration": min_duration,
                 "target_clips": target_clips,
+                "preselections": preselections,
             })
         except ValidationError as exc:
             # include_context=False — see the JSON-branch comment above.
@@ -436,6 +447,10 @@ async def process_endpoint(
     job_id = str(uuid.uuid4())
     job_output_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_output_dir, exist_ok=True)
+    # Persist the Create recipe with the job before it is enqueued: the worker
+    # and every later history/open path can then restore the chosen layers
+    # without depending on the submitting browser's localStorage.
+    save_recipe(job_output_dir, preselections)
     
     env = os.environ.copy()
     _apply_viral_credentials(env, request)
@@ -516,6 +531,7 @@ async def process_endpoint(
         on_change=persist_jobs,
         cleanup_paths=() if keep_input else (input_path,),
         input_path=input_path, keep_input=keep_input,
+        preselections=preselections,
     )
 
     return {"job_id": job_id, "status": "queued"}
@@ -539,6 +555,7 @@ async def batch_process(req: BatchRequest, request: Request):
         job_id = str(uuid.uuid4())
         job_output_dir = os.path.join(OUTPUT_DIR, job_id)
         os.makedirs(job_output_dir, exist_ok=True)
+        save_recipe(job_output_dir, req.preselections)
 
         try:
             cmd = build_main_cmd(
@@ -570,6 +587,7 @@ async def batch_process(req: BatchRequest, request: Request):
                 jobs=jobs, job_queue=job_queue, job_id=job_id,
                 cmd=cmd, env=env, job_output_dir=job_output_dir, batch=True,
                 on_change=persist_jobs,
+                preselections=req.preselections,
             )
             batch_jobs.append({"url": url, "job_id": job_id})
         except QueueFullError:
@@ -1166,6 +1184,31 @@ async def live_monitor_status(request: Request, monitor_id: Optional[str] = None
     """One monitor's status (``?monitor_id=``) or ``{"monitors": [...]}`` for all."""
     require_trusted_config_request(request)
     return live_monitor.status(monitor_id)
+
+
+@app.post("/api/history/{job_id}/preselections")
+async def update_job_preselections(
+    job_id: str, req: PreselectionsUpdateRequest, request: Request
+):
+    """Persist a job's Create recipe (write-through for jobs created before it
+    was stored server-side).
+
+    The dashboard calls this once when it opens a job that only has a
+    browser-local recipe, so the layers survive a different device or a cleared
+    localStorage.
+    """
+    require_trusted_config_request(request)
+    if not is_valid_job_id(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+    job_dir = os.path.join(OUTPUT_DIR, job_id)
+    if not os.path.isdir(job_dir):
+        raise HTTPException(status_code=404, detail="Job not found")
+    await asyncio.to_thread(save_recipe, job_dir, req.preselections)
+    entry = jobs.get(job_id)
+    if entry and isinstance(entry.get("result"), dict):
+        entry["result"]["preselections"] = req.preselections
+        persist_jobs()
+    return {"success": True}
 
 
 @app.post("/api/history/{job_id}/restore")

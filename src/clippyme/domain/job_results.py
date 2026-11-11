@@ -23,6 +23,9 @@ REFRAME_MODE_ALIASES = {"object": "subject"}
 MAX_INSTRUCTIONS_LEN = 5000
 
 
+from clippyme.domain.job_recipe import load_recipe
+
+
 def canonical_reframe_mode(mode):
     """Map the legacy ``object`` alias to the canonical ``subject`` value."""
     return REFRAME_MODE_ALIASES.get(mode, mode)
@@ -191,6 +194,9 @@ def _result_payload(data: dict, clips: list, output_dir: str) -> dict:
         "two_stage": data.get("two_stage"),
         "reviewed_empty": bool(data.get("reviewed_empty")),
         "viral_fallback": data.get("viral_fallback"),
+        # The Create recipe travels with the job so a fresh browser/History
+        # restore still knows which layers to compose.
+        "preselections": load_recipe(output_dir),
     }
     payload.update(runtime_result_fields(output_dir))
     return payload
@@ -202,7 +208,10 @@ def load_partial_result(job_id: str, output_dir: str) -> dict | None:
         target_json = _pick_latest_metadata(output_dir)
         if not target_json:
             runtime = runtime_result_fields(output_dir)
-            return {"clips": [], **runtime} if runtime else None
+            recipe = load_recipe(output_dir)
+            return {"clips": [], "preselections": recipe, **runtime} if runtime else (
+                {"clips": [], "preselections": recipe} if recipe else None
+            )
         if os.path.getsize(target_json) <= 0:
             return None
         with open(target_json, encoding="utf-8") as handle:
@@ -215,7 +224,8 @@ def load_partial_result(job_id: str, output_dir: str) -> dict | None:
         return _result_payload(data, ready, output_dir)
     except (OSError, json.JSONDecodeError, ValueError):
         runtime = runtime_result_fields(output_dir)
-        return {"clips": [], **runtime} if runtime else None
+        recipe = load_recipe(output_dir)
+        return {"clips": [], "preselections": recipe, **runtime} if runtime else None
 
 
 def load_final_result(job_id: str, output_dir: str) -> dict | None:

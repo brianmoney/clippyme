@@ -8,6 +8,7 @@ from clippyme.domain.job_results import (
     _build_clips,
     build_main_cmd,
     load_final_result,
+    load_partial_result,
 )
 
 
@@ -236,6 +237,27 @@ def test_load_final_result_includes_runtime_operations(tmp_path):
     result = load_final_result("job1", str(tmp_path))
     assert result["operations"]["stage"] == "quality"
     assert result["operations"]["progress"] == 92
+
+
+def test_load_final_result_includes_persisted_recipe(tmp_path):
+    from clippyme.domain.job_recipe import save_recipe
+
+    recipe = {"subtitles": {"mode": "karaoke", "preset": "hormozi_bold"}}
+    save_recipe(str(tmp_path), recipe)
+    (tmp_path / "vid_metadata.json").write_text(json.dumps({"shorts": []}))
+    result = load_final_result("job1", str(tmp_path))
+    assert result["preselections"] == recipe
+
+
+def test_load_partial_result_keeps_recipe_before_metadata(tmp_path):
+    from clippyme.domain.job_recipe import save_recipe
+    from clippyme.domain.runtime_state import RuntimeState
+
+    recipe = {"subtitles": {"mode": "karaoke", "preset": "hormozi_bold"}}
+    save_recipe(str(tmp_path), recipe)
+    RuntimeState(str(tmp_path), job_id="job1").start("queued", progress=2)
+    result = load_partial_result("job1", str(tmp_path))
+    assert result["preselections"] == recipe
 
 
 def test_target_clips_forwarded_and_validated():
