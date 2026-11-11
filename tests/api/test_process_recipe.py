@@ -1,6 +1,5 @@
 """The Create recipe is persisted with each submitted job (JSON and upload)."""
 import json
-import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,7 +66,7 @@ def test_multipart_submission_persists_recipe(client):
 
 
 def test_invalid_multipart_recipe_is_rejected(client):
-    tc, outputs, calls = client
+    tc, _, calls = client
     resp = tc.post(
         "/api/process",
         headers={"X-Gemini-Key": "k"},

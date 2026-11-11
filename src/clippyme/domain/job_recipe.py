@@ -29,7 +29,8 @@ def validate_recipe(value):
     if value is None:
         return None
     if not isinstance(value, dict):
-        raise ValueError("preselections must be a JSON object")
+        # Pydantic maps ValueError to a 422; TypeError would escape validation.
+        raise ValueError("preselections must be a JSON object")  # noqa: TRY004
     try:
         encoded = json.dumps(value, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError) as exc:

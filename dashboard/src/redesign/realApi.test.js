@@ -127,6 +127,47 @@ test('clipPreviewSrc prefers the composed previewUrl over the raw clip', () => {
   assert.equal(composed.endsWith('?v=7'), true);
 });
 
+test('clipPreviewSrc falls back to a server-side composed file', () => {
+  const clip = {
+    video_url: '/videos/j/title_clip_1.mp4',
+    composed_url: '/videos/j/title_1.mp4',
+  };
+  assert.equal(clipPreviewSrc(clip, {}).includes('title_1.mp4'), true);
+  // An explicit per-clip preview still wins.
+  assert.equal(
+    clipPreviewSrc(clip, { previewUrl: '/videos/j/edited.mp4' }).includes('edited.mp4'),
+    true,
+  );
+});
+
+test('exportClip uses an existing composed file when no recipe is present', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url) => { calls.push(url); return Promise.resolve({ ok: true }); };
+  try {
+    const clip = { video_url: '/videos/j/title_clip_1.mp4', composed_url: '/videos/j/title_1.mp4' };
+    const kind = await exportClip('job-1', 0, clip, {}, null);
+    assert.equal(kind, 'composed');
+    assert.equal(calls.length, 0, 'should not compose when a composed file already exists');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('exportClip stays raw when the user turned every layer off', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url) => { calls.push(url); return Promise.resolve({ ok: true }); };
+  try {
+    const clip = { video_url: '/videos/j/title_clip_1.mp4', composed_url: '/videos/j/title_1.mp4' };
+    const kind = await exportClip('job-1', 0, clip, { toggles: { subtitles: false, hook: false } }, null);
+    assert.equal(kind, 'raw');
+    assert.equal(calls.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('fmtDuration renders m:ss with zero-padded seconds', () => {
   assert.equal(fmtDuration(0, 65), '1:05');
   assert.equal(fmtDuration(10, 10), '0:00');

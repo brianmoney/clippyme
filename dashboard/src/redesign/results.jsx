@@ -295,12 +295,17 @@ export function ResultsView({ clips, jobId, preselections, sourceBanner, clipSta
     attemptedRef.current = new Set();
   }, [jobId]);
   useEffect(() => {
-    if (!jobId || !preselections) return;
-    const toggles = seedToggles(preselections);
-    if (!Object.values(toggles).some(Boolean)) return;
+    if (!jobId) return;
+    const recipeToggles = seedToggles(preselections);
     for (const { c: clip, i } of visible) {
       const state = clipStates[i] || {};
-      if (state.toggles) continue;
+      // A recipe-composed file is present on disk and the UI already points at
+      // it: nothing to do. If the preview URL survived in localStorage but the
+      // file is gone (interrupted compose, cleanup), `clip.composed_url` is
+      // absent and we regenerate below instead of showing a dead tile.
+      if (state.previewUrl && clip.composed_url) continue;
+      const toggles = state.toggles || recipeToggles;
+      if (!Object.values(toggles).some(Boolean)) continue;
       const key = `${jobId}:${i}`;
       if (attemptedRef.current.has(key) || composingRef.current.has(key)) continue;
       // Two at a time: a 20-clip job must not launch 20 ffmpeg composes at
@@ -309,12 +314,14 @@ export function ResultsView({ clips, jobId, preselections, sourceBanner, clipSta
       attemptedRef.current.add(key);
       composingRef.current.add(key);
       const apiIndex = clip.original_index ?? i;
-      const hookParams = toggles.hook ? seedHookParams(clip, preselections) : {};
-      const subtitleParams = toggles.subtitles ? seedSubtitleParams(preselections) : {};
-      const logoParams = toggles.logo ? seedLogoParams(preselections) : {};
-      const gradeParams = toggles.grade ? seedGradeParams(preselections) : {};
-      const bannerParams = toggles.banner ? seedBannerParams(preselections, sourceBanner) : {};
-      const topTextParams = toggles.toptext ? seedTopTextParams(preselections) : {};
+      // Reuse the clip's own saved params when it has them, so regenerating a
+      // missing preview never replaces a per-clip edit with the Create recipe.
+      const hookParams = toggles.hook ? (state.hookParams || seedHookParams(clip, preselections)) : {};
+      const subtitleParams = toggles.subtitles ? (state.subtitleParams || seedSubtitleParams(preselections)) : {};
+      const logoParams = toggles.logo ? (state.logoParams || seedLogoParams(preselections)) : {};
+      const gradeParams = toggles.grade ? (state.gradeParams || seedGradeParams(preselections)) : {};
+      const bannerParams = toggles.banner ? (state.bannerParams || seedBannerParams(preselections, sourceBanner)) : {};
+      const topTextParams = toggles.toptext ? (state.topTextParams || seedTopTextParams(preselections)) : {};
       const dropRanges = toggles.smartcut ? (state.dropRanges || []) : [];
       const apiParams = {
         toggles,
@@ -337,12 +344,8 @@ export function ResultsView({ clips, jobId, preselections, sourceBanner, clipSta
           previewUrl: composed_url, previewBust: Date.now(),
         }))
         .catch((err) => {
-          // Do NOT persist the recipe as if it had been applied: keeping the
-          // toggles here made every earlier failure permanent (the effect sees
-          // `state.toggles` and never retries, even after a reload), so the
-          // clips stayed raw and the operator had to edit one by hand and copy
-          // it to the rest. Leaving the state recipe-free lets the next mount
-          // retry, while export/publish still seed the same params.
+          // Keep the attempted params so a later reload retries them; the
+          // preview check above (not `toggles`) is what prevents a stuck loop.
           onUpdateClipState(i, { processing: false, composeError: true });
           pushToast?.('warn', `Clip ${i + 1}: could not apply the recipe — ${
             String(err?.message || err).slice(0, 90)

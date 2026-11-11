@@ -249,6 +249,21 @@ def test_load_final_result_includes_persisted_recipe(tmp_path):
     assert result["preselections"] == recipe
 
 
+def test_load_final_result_exposes_existing_composed_file(tmp_path):
+    from clippyme.domain.clip_resolve import clip_filename_for, composed_clip_basename
+
+    clip = {"video_title_for_youtube_short": "My Title", "start": 0, "end": 5}
+    (tmp_path / "vid_metadata.json").write_text(json.dumps({"shorts": [clip]}))
+    raw_name = clip_filename_for("vid_metadata.json", clip, 0)
+    composed_name = composed_clip_basename(clip, 0)
+    (tmp_path / raw_name).write_bytes(b"raw")
+    (tmp_path / composed_name).write_bytes(b"composed")
+
+    result = load_final_result("job1", str(tmp_path))
+    assert result["clips"][0]["video_url"].endswith(raw_name)
+    assert result["clips"][0]["composed_url"].endswith(composed_name)
+
+
 def test_load_partial_result_keeps_recipe_before_metadata(tmp_path):
     from clippyme.domain.job_recipe import save_recipe
     from clippyme.domain.runtime_state import RuntimeState

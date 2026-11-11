@@ -94,6 +94,17 @@ def test_scan_history_includes_persisted_recipe(tmp_path):
     assert out[0]["preselections"] == recipe
 
 
+def test_scan_history_exposes_existing_composed_file(tmp_path):
+    from clippyme.domain.clip_resolve import composed_clip_basename
+
+    clip = {"video_title_for_youtube_short": "My Title", "start": 0, "end": 10}
+    job_dir = _make_job(str(tmp_path), VALID_UUID, clips=[clip])
+    composed_name = composed_clip_basename(clip, 0)
+    open(os.path.join(job_dir, composed_name), "wb").close()
+    out = hs.scan_history(str(tmp_path))
+    assert out[0]["clips"][0]["composed_url"].endswith(composed_name)
+
+
 def test_scan_history_surfaces_title_matching_source(tmp_path):
     _make_job(str(tmp_path), VALID_UUID, clips=[{"start": 0, "end": 10}])
     out = hs.scan_history(str(tmp_path))

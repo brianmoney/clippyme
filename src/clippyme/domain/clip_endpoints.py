@@ -124,11 +124,31 @@ def restore_job_from_disk(job_id: str, output_dir: str, job_dir: str) -> dict:
     if not present:
         raise NotFoundError("Job has no rendered clips on disk")
 
+    # Use the full result builder so restores keep the Create recipe,
+    # composed-file URLs, source_info and two-stage report — the minimal
+    # payload used to drop all of them, so a job reopened from History lost
+    # its subtitles/hook defaults. Keep the on-disk existence filter above.
+    from clippyme.domain.job_recipe import load_recipe
+    from clippyme.domain.job_results import load_final_result
+
+    full = load_final_result(job_id, job_dir) or {}
+    ready_indices = {clip.get("original_index") for clip in present}
+    restored_clips = [
+        clip for clip in (full.get("clips") or [])
+        if clip.get("original_index") in ready_indices
+    ]
+    if restored_clips:
+        full = {**full, "clips": restored_clips}
+    else:
+        full = {**full, "clips": present}
+    full.setdefault("cost_analysis", data.get("cost_analysis"))
+    full.setdefault("preselections", load_recipe(job_dir))
+
     return {
         "status": "completed",
         "logs": ["Restored from disk."],
         "cmd": [],
         "env": {},
         "output_dir": job_dir,
-        "result": {"clips": present, "cost_analysis": data.get("cost_analysis")},
+        "result": full,
     }

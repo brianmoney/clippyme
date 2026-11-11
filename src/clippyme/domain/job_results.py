@@ -7,7 +7,7 @@ import logging
 import os
 import re
 
-from clippyme.domain.clip_resolve import clip_filename_for
+from clippyme.domain.clip_resolve import clip_filename_for, composed_clip_basename
 from clippyme.pipeline.download import display_title
 from clippyme.pipeline.reframe_ops import normalize_letterbox_zoom
 from clippyme.domain.runtime_state import runtime_result_fields
@@ -169,6 +169,13 @@ def _build_clips(data: dict, base_name: str, job_id: str, output_dir: str, only_
         if only_ready and not exists:
             continue
         clip["video_url"] = f"/videos/{job_id}/{clip_filename}"
+        # A recipe-composed file may already exist (from the dashboard's
+        # pre-compose or an older job). Exposing it lets any browser show/
+        # download the version with subtitles/hook even when the recipe file
+        # predates server-side recipe storage.
+        composed_name = composed_clip_basename(clip, index)
+        if os.path.exists(os.path.join(output_dir, composed_name)):
+            clip["composed_url"] = f"/videos/{job_id}/{composed_name}"
         clip["original_index"] = index
         result.append(clip)
     return result

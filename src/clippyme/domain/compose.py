@@ -508,14 +508,10 @@ async def _compose_layers_impl(
     from clippyme.domain.clip_resolve import composed_clip_basename
     composed_filename = composed_clip_basename(clip_info, clip_index)
     composed_path = os.path.join(job_dir, composed_filename)
-    # Always wipe a stale composed file from a previous compose pass so
-    # we never accidentally upload yesterday's version when the user has
-    # changed toggles in the meantime.
-    if os.path.exists(composed_path):
-        try:
-            os.remove(composed_path)
-        except OSError:
-            pass
+    # Do NOT wipe an existing composed file yet: compose to intermediates and
+    # replace the final atomically only after every layer succeeds. A failure,
+    # crash or restart used to delete the last usable (subtitled) file, which
+    # is exactly how a clip could lose its subtitles.
 
     layers_applied: list[str] = []
 
@@ -679,7 +675,18 @@ async def _compose_layers_impl(
             logger.info("compose_layers: ✓ banner → %s", os.path.basename(current_input))
 
         if os.path.abspath(current_input) != os.path.abspath(composed_path):
-            shutil.copy2(current_input, composed_path)
+            tmp_composed = f"{composed_path}.{os.getpid()}.tmp"
+            try:
+                shutil.copy2(current_input, tmp_composed)
+                # Atomic replace keeps the previous good compose until the new
+                # one is fully written; a concurrent reader never sees a
+                # half-written file.
+                os.replace(tmp_composed, composed_path)
+            finally:
+                try:
+                    os.remove(tmp_composed)
+                except FileNotFoundError:
+                    pass
 
         logger.info(
             "compose_layers: ✅ final = %s (applied=%s)",
@@ -693,13 +700,8 @@ async def _compose_layers_impl(
         _cleanup_intermediates(intermediate_files, composed_path)
         return composed_filename
     except Exception:
-        # Failure path: remove any partial composed output AND every
-        # intermediate we created. Then re-raise the original exception
-        # so the endpoint layer can map it to an HTTP error.
+        # Failure path: remove every intermediate we created, but keep any
+        # previously composed file intact — a failed re-compose must not strip
+        # the subtitles/hook from the clip the user already had.
         _cleanup_intermediates(intermediate_files, "")
-        if os.path.exists(composed_path):
-            try:
-                os.remove(composed_path)
-            except OSError:
-                pass
         raise

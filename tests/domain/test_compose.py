@@ -155,6 +155,32 @@ def test_failure_cleans_intermediates_and_reraises(tmp_path, monkeypatch):
     assert not os.path.exists(tmp_path / "composed_clip_0.mp4")
 
 
+def test_failure_keeps_previous_composed_file(tmp_path, monkeypatch):
+    order = []
+    _install_recording_stubs(monkeypatch, order)
+
+    async def boom_smartcut(current_input, base_clip, metadata, clip_info,
+                            intermediate_files, drop_ranges=None):
+        order.append("smartcut")
+        raise RuntimeError("ffmpeg exploded")
+
+    monkeypatch.setattr(compose, "_apply_smartcut", boom_smartcut)
+
+    # A previous successful compose exists on disk. A failed re-compose must
+    # not delete it, otherwise the clip loses its subtitles/hook.
+    previous = _touch(str(tmp_path / "composed_clip_0.mp4"))
+    with open(previous, "wb") as handle:
+        handle.write(b"previous subtitled file")
+
+    with pytest.raises(RuntimeError, match="ffmpeg exploded"):
+        _run_compose(tmp_path, {"smartcut": True, "hook": False, "subtitles": True})
+
+    assert os.path.exists(previous)
+    with open(previous, "rb") as handle:
+        assert handle.read() == b"previous subtitled file"
+    assert not os.path.exists(tmp_path / "composed_sub_0.mp4")
+
+
 # --- _cleanup_intermediates ------------------------------------------------
 
 def test_cleanup_removes_files_except_keep_path(tmp_path):

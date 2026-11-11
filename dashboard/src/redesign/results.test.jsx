@@ -197,6 +197,79 @@ test('auto-composes once with the Create recipe so previews reflect subtitles/ho
   expect(finalState.hook_params).toBeUndefined();
 });
 
+test('regenerates a preview whose composed file is gone', async () => {
+  const compose = vi.spyOn(realApi, 'composeClip').mockResolvedValue({
+    composed_url: '/videos/job-1/Test Clip_1.mp4',
+  });
+  render(
+    <ResultsView
+      clips={[{ ...clip, video_url: '/videos/job-1/Test Clip_clip_1.mp4' }]} // no composed_url: file is gone
+      jobId="job-1"
+      preselections={{ subtitles: { mode: 'karaoke', preset: 'hormozi_bold' } }}
+      clipStates={{ 0: { previewUrl: '/videos/job-1/Test Clip_1.mp4', toggles: { subtitles: true } } }}
+      onUpdateClipState={vi.fn()}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  await waitFor(() => expect(compose).toHaveBeenCalled());
+});
+
+test('keeps a per-clip edit when regenerating a missing preview', async () => {
+  const compose = vi.spyOn(realApi, 'composeClip').mockResolvedValue({
+    composed_url: '/videos/job-1/Test Clip_1.mp4',
+  });
+  render(
+    <ResultsView
+      clips={[{ ...clip, video_url: '/videos/job-1/Test Clip_clip_1.mp4' }]}
+      jobId="job-1"
+      preselections={{ subtitles: { mode: 'karaoke', preset: 'hormozi_bold' } }}
+      clipStates={{
+        0: {
+          previewUrl: '/videos/job-1/Test Clip_1.mp4',
+          toggles: { subtitles: true },
+          subtitleParams: { mode: 'classic', preset: 'classic_white', font: 'Anton-Regular' },
+        },
+      }}
+      onUpdateClipState={vi.fn()}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  await waitFor(() => expect(compose).toHaveBeenCalled());
+  const [, , params] = compose.mock.calls[0];
+  expect(params.subtitle_params).toMatchObject({ mode: 'classic', preset: 'classic_white', font: 'Anton-Regular' });
+});
+
+test('does not recompose when the composed file is present', async () => {
+  const compose = vi.spyOn(realApi, 'composeClip').mockResolvedValue({ composed_url: '/x.mp4' });
+  render(
+    <ResultsView
+      clips={[{ ...clip, composed_url: '/videos/job-1/Test Clip_1.mp4' }]}
+      jobId="job-1"
+      preselections={{ subtitles: { mode: 'karaoke', preset: 'hormozi_bold' } }}
+      clipStates={{ 0: { previewUrl: '/videos/job-1/Test Clip_1.mp4', toggles: { subtitles: true } } }}
+      onUpdateClipState={vi.fn()}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(compose).not.toHaveBeenCalled();
+});
+
 test('a failed recipe compose stays retryable (does not mark the recipe applied)', async () => {
   // Persisting toggles on failure made every later mount skip the recipe, so
   // one transient compose error left all clips raw forever. Keep the state

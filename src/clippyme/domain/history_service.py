@@ -6,7 +6,7 @@ import os
 import re
 from typing import List
 
-from clippyme.domain.clip_resolve import clip_filename_for
+from clippyme.domain.clip_resolve import clip_filename_for, composed_clip_basename
 from clippyme.domain.job_recipe import load_recipe
 
 logger = logging.getLogger("clippyme")
@@ -61,9 +61,16 @@ def scan_history(output_dir: str) -> List[dict]:
                     clip_filename = clip_filename_for(meta_files[0], clip, i)
                     clip_path = os.path.join(job_dir, clip_filename)
                     if os.path.exists(clip_path):
+                        composed_name = composed_clip_basename(clip, i)
+                        composed_url = (
+                            f"/videos/{entry}/{composed_name}"
+                            if os.path.exists(os.path.join(job_dir, composed_name))
+                            else None
+                        )
                         clip_files.append(
                             {
                                 "video_url": f"/videos/{entry}/{clip_filename}",
+                                "composed_url": composed_url,
                                 "title": clip.get("video_title_for_youtube_short", ""),
                                 "start": clip.get("start", 0),
                                 "end": clip.get("end", 0),

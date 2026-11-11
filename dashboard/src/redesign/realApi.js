@@ -42,6 +42,13 @@ export function clipPreviewSrc(clip, state) {
     const b = state.previewBust;
     return b ? `${full}${full.includes('?') ? '&' : '?'}v=${b}` : full;
   }
+  // A composed layer file may already exist server-side (e.g. a job from
+  // before the recipe was persisted). Prefer it over the raw render so the
+  // subtitles/hook are visible without needing browser-local state — but only
+  // when this clip has no explicit toggle state (an all-off edit must stay raw).
+  if (!state?.toggles && clip?.composed_url) {
+    return clipVideoSrc({ video_url: clip.composed_url }, state?.reframeBust);
+  }
   return clipVideoSrc(clip, state?.reframeBust);
 }
 
@@ -142,7 +149,21 @@ export async function getClipTranscript(jobId, index) {
 export async function exportClip(jobId, index, clip, state, preselections) {
   const toggles = state?.toggles ?? seedToggles(preselections);
   const any = Object.values(toggles || {}).some(Boolean);
-  if (!any) { downloadClip(clip, index); return 'raw'; }
+  if (!any) {
+    // No recipe/state for this browser, but a composed file exists: that is
+    // the version with the layers the editor applied, so prefer it. An
+    // explicit all-off toggle state must stay raw instead.
+    if (!state?.toggles && clip?.composed_url) {
+      const a = document.createElement('a');
+      a.href = safeResolveUrl(clip.composed_url);
+      a.download = clipDownloadName(clip, index);
+      a.style.display = 'none';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      return 'composed';
+    }
+    downloadClip(clip, index);
+    return 'raw';
+  }
   // The results view pre-composes with these params after processing; reuse
   // that file instead of paying for a second identical compose.
   if (state?.previewUrl && !state?.processing) {

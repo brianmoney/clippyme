@@ -43,6 +43,24 @@ def test_restore_filters_missing_clip_files(tmp_path):
     assert not any("clip_3" in c["video_url"] for c in clips)
 
 
+def test_restore_keeps_recipe_and_composed_url(tmp_path):
+    from clippyme.domain.clip_resolve import composed_clip_basename
+    from clippyme.domain.job_recipe import save_recipe
+
+    job_id = "33333333-3333-4333-8333-333333333333"
+    shorts = [{"video_title_for_youtube_short": "Epic Moment", "start": 0, "end": 5}]
+    job_dir = _write_job(tmp_path, job_id, shorts, present_indices=[0])
+    recipe = {"subtitles": {"mode": "karaoke", "preset": "hormozi_bold"}}
+    save_recipe(job_dir, recipe)
+    composed = composed_clip_basename(shorts[0], 0)
+    open(os.path.join(job_dir, composed), "wb").close()
+
+    entry = restore_job_from_disk(job_id, str(tmp_path), job_dir)
+    result = entry["result"]
+    assert result["preselections"] == recipe
+    assert result["clips"][0]["composed_url"].endswith(composed)
+
+
 def test_restore_all_present(tmp_path):
     job_id = "22222222-2222-2222-2222-222222222222"
     shorts = [
