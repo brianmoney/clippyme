@@ -299,3 +299,10 @@ def test_build_viral_prompt_min_duration_raises_window():
     # Explicit max overrides the derived one (still kept >= min+30).
     fixed, _ = build_viral_prompt(TRANSCRIPT, 123.4, min_duration=60, max_duration=120)
     assert "60–120s" in fixed
+
+
+def test_target_clips_reaches_the_prompt():
+    prompt, _ = build_viral_prompt(TRANSCRIPT, 123.4, target_clips=7)
+    assert "aim for about 7 MOST VIRAL" in prompt
+    auto_prompt, _ = build_viral_prompt(TRANSCRIPT, 123.4)
+    assert "select the 3–15 MOST VIRAL" in auto_prompt

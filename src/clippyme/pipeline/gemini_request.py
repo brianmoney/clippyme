@@ -28,7 +28,7 @@ DEFAULT_MIN_CLIP_DURATION = 15.0
 DEFAULT_MAX_CLIP_DURATION = 60.0
 
 GEMINI_PROMPT_TEMPLATE = """
-You are a senior short-form video editor specialized in TikTok, IG Reels and YouTube Shorts virality. Read the ENTIRE transcript + word-level timestamps and select the 3–15 MOST VIRAL {min_clip_duration}–{max_clip_duration}s moments.
+You are a senior short-form video editor specialized in TikTok, IG Reels and YouTube Shorts virality. Read the ENTIRE transcript + word-level timestamps and {clip_count_instruction}.
 
 ## IS THIS MOMENT EVEN WORTH CUTTING? (gate — apply BEFORE scoring)
 A clip must hit at least ONE of these HARD. A moment that is merely pleasant,
@@ -330,7 +330,8 @@ def encode_words_toon(words):
 
 
 def build_viral_prompt(transcript_result, video_duration, instructions=None,
-                       min_duration=None, max_duration=None, creator=None):
+                       min_duration=None, max_duration=None, creator=None,
+                       target_clips=None):
     """Return ``(prompt, words)`` for the primary Gemini call.
 
     ``words`` is also what ``gemini_parser.backfill_hook_text`` needs later,
@@ -369,6 +370,21 @@ def build_viral_prompt(transcript_result, video_duration, instructions=None,
     min_label = _fmt_duration(min_d)
     max_label = _fmt_duration(max_d)
 
+    try:
+        target_n = int(target_clips) if target_clips is not None else 0
+    except (TypeError, ValueError):
+        target_n = 0
+    if target_n > 0:
+        clip_count_instruction = (
+            f"aim for about {target_n} MOST VIRAL {min_label}–{max_label}s "
+            "moments (the editor asked for roughly this many; return fewer "
+            "when the material is weak, and never pad with filler)"
+        )
+    else:
+        clip_count_instruction = (
+            f"select the 3–15 MOST VIRAL {min_label}–{max_label}s moments"
+        )
+
     user_instructions_block = ""
     if instructions:
         # Treat user instructions as untrusted: strip the output delimiter so a
@@ -396,6 +412,7 @@ def build_viral_prompt(transcript_result, video_duration, instructions=None,
         )
 
     prompt = GEMINI_PROMPT_TEMPLATE.format(
+        clip_count_instruction=clip_count_instruction,
         video_duration=video_duration,
         min_clip_duration=min_label,
         max_clip_duration=max_label,

@@ -32,6 +32,11 @@ def canonical_reframe_mode(mode):
 # prefix and an argv-safe character set rather than pinning a stale allow-list.
 GEMINI_MODEL_RE = re.compile(r"^gemini-[A-Za-z0-9.\-]{1,64}$")
 
+# Provider-agnostic viral-detection model id (Gemini, Command Code/OpenAI
+# `org/model`, `model:free`, …). Starts alphanumeric so a value can never be
+# mistaken for an argv flag; only characters used by real catalogs are allowed.
+MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@\-]{0,127}$")
+
 ALLOWED_LANGUAGES = frozenset({
     "multi", "auto",
     "en", "it", "es", "fr", "de", "pt", "nl", "hi", "ja", "ru",
@@ -55,6 +60,7 @@ def build_main_cmd(
     aspect: str | None = None,
     model: str | None = None,
     min_duration: float | None = None,
+    target_clips: int | None = None,
     monitor: bool = False,
 ) -> list[str]:
     """Build argv for the checkpointed backend pipeline.
@@ -71,7 +77,7 @@ def build_main_cmd(
         raise ValueError(f"invalid letterbox_zoom: {letterbox_zoom!r}")
     if model is not None:
         model = model.strip()
-        if model and not GEMINI_MODEL_RE.match(model):
+        if model and not MODEL_ID_RE.match(model):
             raise ValueError(f"invalid model: {model!r}")
     if aspect is not None and aspect not in ("9:16", "1:1", "16:9"):
         raise ValueError(f"invalid aspect: {aspect!r}")
@@ -84,6 +90,9 @@ def build_main_cmd(
     if min_duration is not None:
         if not (0 < float(min_duration) <= 300):
             raise ValueError("min_duration must be in (0, 300] seconds")
+    if target_clips is not None:
+        if not (1 <= int(target_clips) <= 50):
+            raise ValueError("target_clips must be in [1, 50]")
 
     if url and url.lstrip().startswith("-"):
         raise ValueError("url must not start with '-'")
@@ -117,6 +126,8 @@ def build_main_cmd(
         cmd.extend(["--model", model.strip()])
     if min_duration:
         cmd.extend(["--min-duration", str(float(min_duration))])
+    if target_clips:
+        cmd.extend(["--target-clips", str(int(target_clips))])
     if monitor:
         cmd.append("--monitor")
     return cmd
@@ -177,6 +188,9 @@ def _result_payload(data: dict, clips: list, output_dir: str) -> dict:
         "clips": clips,
         "cost_analysis": data.get("cost_analysis"),
         "source_info": data.get("source_info"),
+        "two_stage": data.get("two_stage"),
+        "reviewed_empty": bool(data.get("reviewed_empty")),
+        "viral_fallback": data.get("viral_fallback"),
     }
     payload.update(runtime_result_fields(output_dir))
     return payload

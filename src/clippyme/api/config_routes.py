@@ -23,6 +23,7 @@ from fastapi import APIRouter, File, Header, HTTPException, Query, Request, Uplo
 from clippyme.api.schemas import ConfigUpdateRequest, ZernioConfigRequest
 from clippyme.api.security import require_trusted_config_request
 from clippyme.domain.local_input import configured_local_input_dir
+from clippyme.pipeline import viral_ai
 from clippyme.pipeline.gemini_service import list_available_models
 from clippyme.storage.config_store import (
     get_zernio_profile,
@@ -98,6 +99,38 @@ async def list_gemini_models(
     return await asyncio.to_thread(list_available_models, api_key or os.environ.get("GEMINI_API_KEY"))
 
 
+@router.get("/api/config/viral-models")
+async def list_viral_models(
+    request: Request,
+    provider: Optional[str] = Query(None),
+    api_key: Optional[str] = Header(None, alias="X-Viral-Key"),
+    base_url: Optional[str] = Header(None, alias="X-Viral-Base-Url"),
+):
+    """List models for the configured viral-moment provider.
+
+    With no query/header overrides this reads the saved Settings values, which
+    is what the Create tab uses. Settings passes the unsaved key/URL so a user
+    can validate a selection before saving it.
+    """
+    require_trusted_config_request(request)
+    config = await asyncio.to_thread(load_persistent_config)
+    selected = (provider or config.get("VIRAL_PROVIDER") or "gemini").strip().lower()
+    if selected not in ("gemini", "openai"):
+        selected = "gemini"
+    if selected == "gemini":
+        result = await asyncio.to_thread(
+            list_available_models,
+            api_key or os.environ.get("GEMINI_API_KEY") or config.get("GEMINI_API_KEY"),
+        )
+    else:
+        result = await asyncio.to_thread(
+            viral_ai.list_available_models,
+            api_key or os.environ.get("VIRAL_API_KEY") or config.get("VIRAL_API_KEY"),
+            base_url or os.environ.get("VIRAL_BASE_URL") or config.get("VIRAL_BASE_URL"),
+        )
+    return {"provider": selected, **result}
+
+
 @router.get("/api/config")
 async def get_config(request: Request):
     """Return current active configuration (keys are partially masked for safety)."""
@@ -106,7 +139,8 @@ async def get_config(request: Request):
     # Secret keys are never returned verbatim — even short values are masked so
     # a brief key can't leak. Non-secret flags (model/provider) pass through.
     secret_keys = {"GEMINI_API_KEY", "HF_TOKEN", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY",
-                   "YOUTUBE_COOKIES", "TWITCH_CLIENT_SECRET", "OPENAI_CAPTIONS_API_KEY"}
+                   "YOUTUBE_COOKIES", "TWITCH_CLIENT_SECRET", "OPENAI_CAPTIONS_API_KEY",
+                   "VIRAL_API_KEY"}
     masked = {}
     for k, v in config.items():
         if k in secret_keys and v:

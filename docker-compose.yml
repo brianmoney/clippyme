@@ -73,6 +73,28 @@ services:
       # container directly.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
+      # Optional alternative viral-moment provider (Command Code or any
+      # OpenAI/Anthropic-compatible endpoint). Also configurable in Settings.
+      - VIRAL_PROVIDER=${VIRAL_PROVIDER:-gemini}
+      - VIRAL_BASE_URL=${VIRAL_BASE_URL:-https://api.commandcode.ai/provider/v1}
+      - VIRAL_API_KEY=${VIRAL_API_KEY:-}
+      - VIRAL_MODEL=${VIRAL_MODEL:-}
+      - VIRAL_FALLBACK_MODELS=${VIRAL_FALLBACK_MODELS:-}
+      # Two-stage discovery → editorial review (see README).
+      - VIRAL_MODE=${VIRAL_MODE:-auto}
+      - VIRAL_DISCOVERY_MODEL=${VIRAL_DISCOVERY_MODEL:-z-ai/glm-5.3-flash}
+      - VIRAL_REVIEW_MODEL=${VIRAL_REVIEW_MODEL:-claude-opus-5-5}
+      - VIRAL_DISCOVERY_FALLBACK_MODELS=${VIRAL_DISCOVERY_FALLBACK_MODELS:-z-ai/glm-5.3-flashx}
+      - VIRAL_REVIEW_FALLBACK_MODELS=${VIRAL_REVIEW_FALLBACK_MODELS:-claude-sonnet-5-5}
+      - VIRAL_COPY_FALLBACK_MODELS=${VIRAL_COPY_FALLBACK_MODELS:-}
+      - VIRAL_REASONING_EFFORT=${VIRAL_REASONING_EFFORT:-low}
+      - VIRAL_COPY_MODEL=${VIRAL_COPY_MODEL:-}
+      - VIRAL_MAX_CANDIDATES=${VIRAL_MAX_CANDIDATES:-32}
+      - VIRAL_MAX_SELECTED_CLIPS=${VIRAL_MAX_SELECTED_CLIPS:-8}
+      - VIRAL_MIN_QUALITY=${VIRAL_MIN_QUALITY:-6.0}
+      - VIRAL_MAX_ANALYSIS_COST=${VIRAL_MAX_ANALYSIS_COST:-0}
+      - VIRAL_TWO_STAGE_FALLBACK=${VIRAL_TWO_STAGE_FALLBACK:-single}
+      - VIRAL_STAGE_MAX_ATTEMPTS=${VIRAL_STAGE_MAX_ATTEMPTS:-2}
       # yt-dlp hardening. NOCHECKCERT=1 disables SSL verification only in
       # trusted sandboxes; THROTTLED_RATE is the bytes/sec floor below
       # which yt-dlp re-fetches a slow segment (default 102400 = 100 KB/s).

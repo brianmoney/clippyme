@@ -10,7 +10,12 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from clippyme.domain.job_results import ALLOWED_LANGUAGES, GEMINI_MODEL_RE, MAX_INSTRUCTIONS_LEN
+from clippyme.domain.job_results import (
+    ALLOWED_LANGUAGES,
+    GEMINI_MODEL_RE,
+    MAX_INSTRUCTIONS_LEN,
+    MODEL_ID_RE,
+)
 from clippyme.domain.errors import ValidationError as ClippyMeValidationError
 from clippyme.domain.local_input import validate_local_path
 from clippyme.netutil import resolve_host_addresses
@@ -164,11 +169,14 @@ class ProcessRequest(BaseModel):
     no_zoom: Optional[bool] = False
     skip_analysis: Optional[bool] = False
     model: Optional[str] = Field(
-        None, max_length=72, pattern=r"^gemini-[A-Za-z0-9.\-]{1,64}$"
+        None, max_length=128, pattern=MODEL_ID_RE.pattern
     )
     # Hard floor on every produced clip's length (seconds). 0/unset keeps the
     # default 15-60s prompt window; e.g. 60 asks for and enforces 60s+ clips.
     min_duration: Optional[float] = Field(None, gt=0, le=300)
+    # Editor's requested clip count. Passed into the selection prompt (legacy)
+    # and used as the review ceiling (two-stage); it is a target, not a quota.
+    target_clips: Optional[int] = Field(None, ge=1, le=50)
 
     @field_validator("url")
     @classmethod
@@ -215,9 +223,10 @@ class BatchRequest(BaseModel):
     no_zoom: Optional[bool] = False
     skip_analysis: Optional[bool] = False
     model: Optional[str] = Field(
-        None, max_length=72, pattern=r"^gemini-[A-Za-z0-9.\-]{1,64}$"
+        None, max_length=128, pattern=MODEL_ID_RE.pattern
     )
     min_duration: Optional[float] = Field(None, gt=0, le=300)
+    target_clips: Optional[int] = Field(None, ge=1, le=50)
 
     @field_validator("urls")
     @classmethod
@@ -239,6 +248,14 @@ _ALLOWED_CONFIG_KEYS = frozenset({
     "TRANSCRIPTION_PROVIDER", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "OPENAI_CAPTIONS_BASE_URL", "OPENAI_CAPTIONS_API_KEY",
     "OPENAI_CAPTIONS_MODEL",
+    "VIRAL_PROVIDER", "VIRAL_BASE_URL", "VIRAL_API_KEY", "VIRAL_MODEL",
+    "VIRAL_FALLBACK_MODELS",
+    "VIRAL_MODE", "VIRAL_DISCOVERY_MODEL", "VIRAL_REVIEW_MODEL",
+    "VIRAL_COPY_MODEL", "VIRAL_MAX_CANDIDATES", "VIRAL_MAX_SELECTED_CLIPS",
+    "VIRAL_MIN_QUALITY", "VIRAL_MAX_ANALYSIS_COST",
+    "VIRAL_TWO_STAGE_FALLBACK", "VIRAL_STAGE_MAX_ATTEMPTS",
+    "VIRAL_DISCOVERY_FALLBACK_MODELS", "VIRAL_REVIEW_FALLBACK_MODELS",
+    "VIRAL_COPY_FALLBACK_MODELS", "VIRAL_REASONING_EFFORT",
 })
 
 # OpenAI-compatible model ids: letters/digits plus ._-/ (OpenRouter "org/model",
@@ -271,6 +288,68 @@ class ConfigUpdateRequest(BaseModel):
         caption_model = values.get("OPENAI_CAPTIONS_MODEL")
         if caption_model and not _OPENAI_MODEL_RE.fullmatch(caption_model):
             raise ValueError("OPENAI_CAPTIONS_MODEL is not a valid model id")
+        viral_provider = values.get("VIRAL_PROVIDER")
+        if viral_provider not in (None, "", "gemini", "openai"):
+            raise ValueError("VIRAL_PROVIDER must be gemini or openai")
+        viral_url = values.get("VIRAL_BASE_URL")
+        if viral_url and not re.match(r"^https?://\S+$", viral_url):
+            raise ValueError("VIRAL_BASE_URL must be an http(s) URL")
+        viral_model = values.get("VIRAL_MODEL")
+        if viral_model and not MODEL_ID_RE.fullmatch(viral_model):
+            raise ValueError("VIRAL_MODEL is not a valid model id")
+        for part in (values.get("VIRAL_FALLBACK_MODELS") or "").split(","):
+            part = part.strip()
+            if part and not MODEL_ID_RE.fullmatch(part):
+                raise ValueError("VIRAL_FALLBACK_MODELS contains an invalid model id")
+        viral_mode = values.get("VIRAL_MODE")
+        if viral_mode not in (None, "", "auto", "single", "two_stage"):
+            raise ValueError("VIRAL_MODE must be auto, single or two_stage")
+        for key in ("VIRAL_DISCOVERY_MODEL", "VIRAL_REVIEW_MODEL", "VIRAL_COPY_MODEL"):
+            model = values.get(key)
+            if model and not MODEL_ID_RE.fullmatch(model):
+                raise ValueError(f"{key} is not a valid model id")
+        for key in ("VIRAL_DISCOVERY_FALLBACK_MODELS", "VIRAL_REVIEW_FALLBACK_MODELS",
+                    "VIRAL_COPY_FALLBACK_MODELS"):
+            for part in (values.get(key) or "").split(","):
+                part = part.strip()
+                if part and not MODEL_ID_RE.fullmatch(part):
+                    raise ValueError(f"{key} contains an invalid model id")
+        fallback = values.get("VIRAL_TWO_STAGE_FALLBACK")
+        if fallback not in (None, "", "single", "off"):
+            raise ValueError("VIRAL_TWO_STAGE_FALLBACK must be single or off")
+        effort = values.get("VIRAL_REASONING_EFFORT")
+        if effort not in (None, "", "off", "minimal", "low", "medium", "high", "xhigh", "max"):
+            raise ValueError(
+                "VIRAL_REASONING_EFFORT must be off, minimal, low, medium, high, xhigh or max"
+            )
+
+        def _bounded_int(key, lo, hi):
+            raw = values.get(key)
+            if raw in (None, ""):
+                return
+            try:
+                parsed = int(raw)
+            except ValueError as exc:
+                raise ValueError(f"{key} must be an integer") from exc
+            if not (lo <= parsed <= hi):
+                raise ValueError(f"{key} must be between {lo} and {hi}")
+
+        def _bounded_float(key, lo, hi):
+            raw = values.get(key)
+            if raw in (None, ""):
+                return
+            try:
+                parsed = float(raw)
+            except ValueError as exc:
+                raise ValueError(f"{key} must be a number") from exc
+            if not (lo <= parsed <= hi):
+                raise ValueError(f"{key} must be between {lo} and {hi}")
+
+        _bounded_int("VIRAL_MAX_CANDIDATES", 4, 60)
+        _bounded_int("VIRAL_MAX_SELECTED_CLIPS", 1, 20)
+        _bounded_int("VIRAL_STAGE_MAX_ATTEMPTS", 1, 5)
+        _bounded_float("VIRAL_MIN_QUALITY", 0.0, 10.0)
+        _bounded_float("VIRAL_MAX_ANALYSIS_COST", 0.0, 10000.0)
         return values
 
 

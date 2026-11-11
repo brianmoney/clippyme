@@ -55,7 +55,7 @@ Fork of OpenShorts, hardened and extended: cloud-or-local transcription, Gemini 
 Given a video URL or upload, ClippyMe runs the following pipeline end-to-end:
 
 1. **Download** with `yt-dlp` (Deno-based JS runtime to bypass YouTube bot detection, optional cookies for age-gated content).
-2. **Transcribe** with one of three providers, chosen in Settings: **Deepgram Nova-3** by default (multi-language, code-switching EN/IT), **ElevenLabs Scribe** (emits `(laughter)`/`(applause)` audio-event tags that feed the viral prompt as a free emotional-payoff signal, with an optional Voice Isolator pre-pass for noisy sources), or local **Faster-Whisper**. Both cloud providers fall back to Faster-Whisper on any failure, so a bad key never breaks a job. The video is stripped to a mono-16 kHz FLAC first, so only audio is uploaded/decoded (a few MB instead of the full mp4). Cached on disk for 7 days keyed by URL hash.
+2. **Transcribe** with one of three providers, chosen in Settings: **Deepgram Nova-3** by default (multi-language, code-switching EN/IT), **ElevenLabs Scribe** (emits `(laughter)`/`(applause)` audio-event tags that feed the viral selection prompts — single-stage or two-stage — as a free emotional-payoff signal, with an optional Voice Isolator pre-pass for noisy sources), or local **Faster-Whisper**. Both cloud providers fall back to Faster-Whisper on any failure, so a bad key never breaks a job. The video is stripped to a mono-16 kHz FLAC first, so only audio is uploaded/decoded (a few MB instead of the full mp4). Cached on disk for 7 days keyed by URL hash.
 3. **Detect viral moments** with **Google Gemini** (`gemini-3.5-flash` by default). A 5-axis viral_score rubric (HOOK_STRENGTH, EMOTIONAL_PAYOFF, QUOTABILITY, SELF_CONTAINED, DENSITY) plus a 5-level robust JSON parser tolerates malformed model output. **No-AI fallback:** if no Gemini key is set or the call fails, the transcript is topic-segmented into several clips by dependency-light lexical **TextTiling** (ported from [ClipsAI](https://github.com/ClipsAI/clipsai)) instead of dumping the whole video as one clip, heuristic, not viral-ranked, but offline and free. **Clean clip edges:** each selected `[start, end]` is then snapped to transcript boundaries, first to the nearest **word** edge, then extended to the surrounding **sentence** (start back to the sentence onset, end forward to the sentence-final word) so a clip never opens or closes mid-word or mid-sentence. The sentence pass is asymmetric and clamped (≤60 s, no overlap with a neighbouring clip), guards against false sentence-ends (abbreviations, decimals, acronyms), and gracefully no-ops on unpunctuated transcripts, so it is never worse than the word-only snap. A final **waveform** pass then nudges each edge into the nearest actual audio **silence trough** (ffmpeg `silencedetect`) so a cut never clips a word's attack or release, moving only toward quiet, and a no-op when no silence sits near the edge.
 4. **Reframe to 9:16** with active-speaker tracking: YOLOv8 person detection + MediaPipe FaceMesh mouth-aspect-ratio (MAR) variance to pick who is speaking, then a smoothed cameraman that adapts speed and zoom per scene. Hardened against messy real-world inputs: variable-frame-rate normalization, audio `start_time` compensation (YouTube A/V desync), and corrupt-frame resilience, all no-ops on clean sources.
 5. **Post-process** each clip: Ken Burns auto-zoom (1.0→1.05×), EBU R128 audio normalization to −14 LUFS, automatic cover frame selection. Every rendered mp4 is written with a leading `moov` atom (`+faststart`), so it starts playing in the browser before the full file downloads and uploads cleanly to social. Every render and compose pass shares one near-visually-lossless libx264 setting (CRF 18, `CLIPPYME_X264_CRF`), so the stacked re-encodes don't compound into soft output; the final mux and download copy are stream-copy/lossless.
@@ -151,14 +151,45 @@ All API keys, model selection, and cookies are managed **from the dashboard Sett
 
 | Key | Required for | Notes |
 |---|---|---|
-| `GEMINI_API_KEY` | Viral moment detection | Default model `gemini-3.5-flash`; override per job or set the default in Settings (live model discovery). |
+| `GEMINI_API_KEY` | Viral moment detection | Default provider. Default model `gemini-3.5-flash`; override per job or set the default in Settings (live model discovery). |
 | `GEMINI_FALLBACK_MODELS` | Automatic quota fallback | Default: `gemini-3.1-flash-lite,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-flash-lite`. Each new job retries the preferred `GEMINI_MODEL` first. |
+| `VIRAL_PROVIDER` | Alternative viral provider | `gemini` (default) or `openai`. `openai` routes to any OpenAI/Anthropic-compatible endpoint, including Command Code (Claude, GPT and open models). Configure in Settings → Viral moment provider. |
+| `VIRAL_BASE_URL` / `VIRAL_API_KEY` / `VIRAL_MODEL` | Command Code provider | Default base URL `https://api.commandcode.ai/provider/v1`; model is any id from `/provider/v1/models` (e.g. `claude-sonnet-5`, `gpt-6-sol`, `deepseek/deepseek-v4-flash`). Empty model defaults to `claude-sonnet-5`. |
+| `VIRAL_FALLBACK_MODELS` | Provider fallback chain | Comma-separated model ids tried after `VIRAL_MODEL` on quota/outage errors. Default `claude-sonnet-5-5`. |
+| `VIRAL_MODE` | Selection strategy | `auto` (default: two-stage on Command Code, legacy on Gemini), `two_stage`, or `single`. |
+| `VIRAL_DISCOVERY_MODEL` | Stage 1 discovery | Default `z-ai/glm-5.3-flash`. High-recall candidate finder; no titles/hooks/scores at this stage. |
+| `VIRAL_REVIEW_MODEL` | Stage 2 editorial review | Default `claude-opus-5-5`. Independently scores the 10-dimension rubric, rejects weak/duplicate/misleading candidates and returns the ordered shortlist. |
+| `VIRAL_DISCOVERY_FALLBACK_MODELS` / `VIRAL_REVIEW_FALLBACK_MODELS` | Stage model fallbacks | Defaults `z-ai/glm-5.3-flashx` / `claude-sonnet-5-5`. The report records the model actually used; a fallback review is never presented as Opus-approved. |
+| `VIRAL_REASONING_EFFORT` | OpenAI-style thinking budget | Default `low`. GLM-5.3 Flash can spend its whole output budget reasoning and time out (HTTP 524) on large prompts; `low` keeps it bounded. CommandCode accepts `off/minimal/low/medium/high/xhigh/max`; unsupported values are dropped by the retry. |
+| `VIRAL_COPY_MODEL` | Promotional copy | Optional; blank reuses the discovery model. Copy is generated only for clips that survive review. |
+| `VIRAL_MAX_CANDIDATES` / `VIRAL_MAX_SELECTED_CLIPS` / `VIRAL_MIN_QUALITY` | Two-stage limits | Defaults `32` / `8` / `6.0`. The review threshold is the mean of the 10 rubric dimensions (0-10); weak clips are rejected rather than padded. |
+| `VIRAL_TWO_STAGE_FALLBACK` | Stage failure policy | `single` (default) falls back to the legacy single-stage selection; `off` returns no clips and preserves the discovery artifact for a retry. |
 | `DEEPGRAM_API_KEY` | Cloud transcription (default) | Falls back to local Faster-Whisper if missing. |
 | `ELEVENLABS_API_KEY` | Alternative cloud transcription (Scribe) | Adds audio-event tags + optional Voice Isolator; also falls back to Faster-Whisper. |
 | `HUGGINGFACE_TOKEN` | Optional gated models for Whisper | |
 | `OPENAI_CAPTIONS_API_KEY` | AI caption optimization (optional) | Any OpenAI-compatible `/chat/completions` endpoint: set `OPENAI_CAPTIONS_BASE_URL` (default `https://api.openai.com/v1`) + `OPENAI_CAPTIONS_MODEL` (default `gpt-4o-mini`). Works with OpenRouter, Ollama, LM Studio, etc. Configure in Settings → AI captions. |
 | Zernio | Social publishing | Per-platform account IDs auto-discovered via "Discover from Zernio". |
 | Cookies | YouTube age-gated / region-locked content | Upload a Netscape `cookies.txt` from the Settings tab. Stored at `data/cookies.txt`, mode `0600`, max 10 MB. |
+
+### Two-stage viral selection (default on Command Code)
+
+When `VIRAL_PROVIDER=openai`, `VIRAL_MODE=auto` runs an editorial pipeline instead of one model picking clips:
+
+1. **Discovery** (`VIRAL_DISCOVERY_MODEL`, default `z-ai/glm-5.3-flash`) reads the whole transcript in overlapping chunks (for long videos) and proposes up to `VIRAL_MAX_CANDIDATES` moments. It is recall-oriented, may propose overlapping alternatives, and emits no numerical scores, titles, or hooks.
+2. **Consolidation** merges near-identical proposals, preserves meaningfully different overlaps, and caps the global set fairly across chunks.
+3. **Editorial review** (`VIRAL_REVIEW_MODEL`, default `claude-opus-5-5`) receives the real transcript plus each candidate's exact excerpt/context (never the discovery model's scores) and scores ten dimensions (0-10), flags late payoffs/background dependence/misleading hooks/duplicates, makes bounded pairwise comparisons for close calls, and returns an ordered shortlist. Nothing below `VIRAL_MIN_QUALITY` survives, and returning zero clips is valid.
+4. **Boundaries** are refined from Opus suggestions, anchored to real word timestamps, duration-clamped, deduplicated, and then passed through the existing deterministic transcript/silence snapping.
+
+The Create tab's clip count is a real request field (`target_clips`), not free text: the legacy prompt asks for that many moments, while two-stage uses it in discovery/review and as the final selection ceiling (review can still return fewer, or zero).
+5. **Copy** is written only for the survivors by `VIRAL_COPY_MODEL` (default: the discovery model); if it fails, grounded fallback copy is derived from the selected excerpt. Rendering, reframe, subtitles, smart cut and clip editing are unchanged.
+
+Intermediate data is written beside the job metadata (JSON is blocked from the public `/videos` mount): `two_stage_discovery.json`, `two_stage_review.json`, `two_stage_copy.json`, `two_stage_report.json`. Inspect it with `GET /api/analysis/{job_id}` or:
+
+```bash
+python scripts/viral_eval.py --job-dir output/<job_id>
+```
+
+Retries reuse the discovery/review/copy artifacts; a failed review keeps the candidates, so re-running does not pay for discovery or transcription again. Set `CLIPPYME_FORCE_VIRAL_ANALYSIS=1` to force a fresh run. Set `CLIPPYME_VIRAL_EVAL=1` to also run the legacy single-stage path on the same transcript and write `viral_eval_report.json` (this roughly doubles analysis cost). CommandCode does not publish per-model pricing, so token counts and latency are recorded but `cost_usd` is reported as `null`/unknown rather than zero. Full architecture, configuration, measured comparison and limitations: [`docs/two-stage-viral-selection.md`](docs/two-stage-viral-selection.md).
 
 Runtime env overrides (rarely needed):
 
@@ -273,9 +304,10 @@ All routes are JSON in / JSON out. Job IDs are strict UUID4. Config endpoints re
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/process` | Single video (URL, multipart file, or server-local `local_path`). Accepts `reframe_mode`, per-job `model`. |
-| `POST` | `/api/batch` | Up to 20 URLs in one shot. |
+| `POST` | `/api/process` | Single video (URL, multipart file, or server-local `local_path`). Accepts `reframe_mode`, per-job `model`, `min_duration`, `target_clips`. |
+| `POST` | `/api/batch` | Up to 20 URLs in one shot. Accepts the same per-job fields, including `target_clips`. |
 | `GET` | `/api/status/{job_id}` | Live status + logs + result (clips stream in as they finish). |
+| `GET` | `/api/analysis/{job_id}` | Two-stage discovery candidates, Opus rankings and the diagnostic report (trusted origin). |
 | `POST` | `/api/pause/{job_id}` | Suspend the running job (resume-able). |
 | `POST` | `/api/resume/{job_id}` | Resume a paused job. |
 | `POST` | `/api/stop/{job_id}` | Stop early but **keep the clips finished so far**. |

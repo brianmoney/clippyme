@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import uuid
@@ -294,6 +295,37 @@ async def root():
 async def health():
     return {"status": "healthy"}
 
+def _apply_viral_credentials(env: dict, request: Request) -> str:
+    """Attach the active viral-provider key to a job env and return provider.
+
+    Keys may arrive per-request (X-Gemini-Key / X-Viral-Key) or live only in
+    Settings. The latter is what makes a browser with an empty localStorage key
+    work — the backend already persists the key and the job runner overlays it.
+    """
+    cfg = load_persistent_config() or {}
+    provider = (cfg.get("VIRAL_PROVIDER") or env.get("VIRAL_PROVIDER") or "gemini")
+    provider = str(provider).strip().lower()
+    gemini_key = request.headers.get("X-Gemini-Key")
+    viral_key = request.headers.get("X-Viral-Key")
+    if gemini_key:
+        env["GEMINI_API_KEY"] = gemini_key
+    if viral_key:
+        env["VIRAL_API_KEY"] = viral_key
+    if provider == "openai":
+        if not (viral_key or cfg.get("VIRAL_API_KEY") or env.get("VIRAL_API_KEY")):
+            raise HTTPException(
+                status_code=400,
+                detail=("Command Code / OpenAI-compatible API key not configured "
+                        "(Settings → Viral moment provider)"),
+            )
+    elif not (gemini_key or cfg.get("GEMINI_API_KEY") or env.get("GEMINI_API_KEY")):
+        raise HTTPException(
+            status_code=400,
+            detail="Gemini API key not configured (Settings → API keys)",
+        )
+    return provider
+
+
 @app.post("/api/process")
 async def process_endpoint(
     request: Request,
@@ -305,9 +337,9 @@ async def process_endpoint(
     require_trusted_config_request(request)
     # ~20 single-job submissions/min per client; compute-heavy, so throttle.
     enforce_rate_limit(request, "process", capacity=20, refill_per_sec=20 / 60)
-    api_key = request.headers.get("X-Gemini-Key")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Missing X-Gemini-Key header")
+    # Fail before creating a job dir / saving an upload when no usable key is
+    # configured. The real env is built later, once the job dir exists.
+    _apply_viral_credentials(os.environ.copy(), request)
 
     # Handle JSON body via ProcessRequest for URL/local_path payloads. Pydantic
     # enforces the reframe_mode regex, the instructions length cap and the
@@ -324,6 +356,7 @@ async def process_endpoint(
     skip_analysis = False
     model = None
     min_duration = None
+    target_clips = None
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
@@ -347,6 +380,7 @@ async def process_endpoint(
         skip_analysis = bool(validated.skip_analysis)
         model = validated.model
         min_duration = validated.min_duration
+        target_clips = validated.target_clips
 
     # For multipart/form-data uploads, extract reframe_mode + language from form fields
     if "multipart/form-data" in content_type:
@@ -369,6 +403,12 @@ async def process_endpoint(
                 min_duration = float(md)
             except ValueError:
                 raise HTTPException(status_code=400, detail="min_duration must be a number")
+        tc = form.get("target_clips")
+        if tc not in (None, ""):
+            try:
+                target_clips = int(tc)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="target_clips must be an integer")
         # Validate the multipart values through the same schema for
         # consistency — we drop the url requirement since we're using
         # an uploaded file path.
@@ -384,6 +424,7 @@ async def process_endpoint(
                 "skip_analysis": skip_analysis,
                 "model": model or None,
                 "min_duration": min_duration,
+                "target_clips": target_clips,
             })
         except ValidationError as exc:
             # include_context=False — see the JSON-branch comment above.
@@ -397,7 +438,7 @@ async def process_endpoint(
     os.makedirs(job_output_dir, exist_ok=True)
     
     env = os.environ.copy()
-    env["GEMINI_API_KEY"] = api_key
+    _apply_viral_credentials(env, request)
 
     input_path = None
     keep_input = False
@@ -456,6 +497,7 @@ async def process_endpoint(
             skip_analysis=skip_analysis,
             model=model,
             min_duration=min_duration,
+            target_clips=target_clips,
         )
     except ValueError as exc:
         await asyncio.to_thread(shutil.rmtree, job_output_dir, True)
@@ -485,9 +527,7 @@ async def batch_process(req: BatchRequest, request: Request):
     require_trusted_config_request(request)
     # Each batch can enqueue up to 20 jobs, so limit batch calls more tightly.
     enforce_rate_limit(request, "batch", capacity=10, refill_per_sec=10 / 60)
-    api_key = request.headers.get("X-Gemini-Key")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Missing X-Gemini-Key header")
+    _apply_viral_credentials(os.environ.copy(), request)
 
     batch_jobs = []
 
@@ -514,6 +554,7 @@ async def batch_process(req: BatchRequest, request: Request):
                 skip_analysis=bool(getattr(req, "skip_analysis", False)),
                 model=getattr(req, "model", None),
                 min_duration=getattr(req, "min_duration", None),
+                target_clips=getattr(req, "target_clips", None),
             )
         except ValueError as exc:
             # This item's output dir was already created above but it never
@@ -522,7 +563,7 @@ async def batch_process(req: BatchRequest, request: Request):
             raise HTTPException(status_code=400, detail=str(exc))
 
         env = os.environ.copy()
-        env["GEMINI_API_KEY"] = api_key
+        _apply_viral_credentials(env, request)
 
         try:
             await submit_job(
@@ -556,6 +597,43 @@ async def get_status(job_id: str):
         "logs": job.get('logs', [])[-500:],
         "result": job.get('result')
     }
+
+@app.get("/api/analysis/{job_id}")
+async def get_viral_analysis(job_id: str, request: Request):
+    """Inspect the two-stage discovery candidates and editorial rankings.
+
+    Artifacts live beside the job's metadata (JSON is blocked from the public
+    /videos mount), so this trusted-origin endpoint is the supported way to
+    examine intermediate data from the dashboard or a diagnostic script.
+    """
+    require_trusted_config_request(request)
+    if not is_valid_job_id(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+    job_dir = os.path.join(OUTPUT_DIR, job_id)
+
+    def _read(name):
+        try:
+            with open(os.path.join(job_dir, name), encoding="utf-8") as handle:
+                value = json.load(handle)
+            return value if isinstance(value, dict) else None
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+
+    report, discovery, review, copy = await asyncio.gather(
+        asyncio.to_thread(_read, "two_stage_report.json"),
+        asyncio.to_thread(_read, "two_stage_discovery.json"),
+        asyncio.to_thread(_read, "two_stage_review.json"),
+        asyncio.to_thread(_read, "two_stage_copy.json"),
+    )
+    if not any((report, discovery, review, copy)):
+        raise HTTPException(status_code=404, detail="No two-stage analysis for this job")
+    return {
+        "report": report,
+        "candidates": (discovery or {}).get("candidates"),
+        "review": (review or {}).get("result"),
+        "copy": (copy or {}).get("copies"),
+    }
+
 
 @app.post("/api/cancel/{job_id}")
 async def cancel_job(job_id: str, request: Request):

@@ -28,7 +28,7 @@ def merge_persistent_config(env: dict, persisted: dict | None) -> dict:
     for key, value in (persisted or {}).items():
         if value in (None, ""):
             continue
-        if key == "GEMINI_API_KEY" and env.get(key):
+        if key in ("GEMINI_API_KEY", "VIRAL_API_KEY") and env.get(key):
             continue
         env[str(key)] = str(value)
     return env

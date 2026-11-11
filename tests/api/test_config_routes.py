@@ -121,6 +121,52 @@ def test_models_lists_via_provided_key(client, monkeypatch):
     assert r.json() == ["gemini-a", "gemini-b"]
 
 
+def test_viral_models_uses_saved_provider(client, monkeypatch):
+    client.post("/api/config", json={"keys": {"VIRAL_PROVIDER": "openai"}})
+    captured = {}
+
+    def fake_list(key, base_url):
+        captured["key"] = key
+        captured["base_url"] = base_url
+        return {"models": [{"name": "gpt-6-sol"}]}
+
+    monkeypatch.setattr(config_module.viral_ai, "list_available_models", fake_list)
+    r = client.get("/api/config/viral-models", headers={"X-Viral-Key": "cc-key"})
+    assert r.status_code == 200
+    assert r.json() == {"provider": "openai", "models": [{"name": "gpt-6-sol"}]}
+    assert captured["key"] == "cc-key"
+
+
+def test_viral_models_can_use_gemini_provider(client, monkeypatch):
+    monkeypatch.setattr(config_module, "list_available_models", lambda key: {"models": ["gemini-a"]})
+    r = client.get("/api/config/viral-models?provider=gemini")
+    assert r.status_code == 200
+    assert r.json() == {"provider": "gemini", "models": ["gemini-a"]}
+
+
+def test_config_viral_keys_roundtrip_and_validation(client):
+    r = client.post("/api/config", json={"keys": {
+        "VIRAL_PROVIDER": "openai",
+        "VIRAL_BASE_URL": "https://api.commandcode.ai/provider/v1",
+        "VIRAL_API_KEY": "cmd_secret_key_123",
+        "VIRAL_MODEL": "claude-sonnet-5",
+        "VIRAL_FALLBACK_MODELS": "gpt-6-sol,deepseek/deepseek-v4-flash",
+    }})
+    assert r.status_code == 200
+    got = client.get("/api/config").json()
+    assert got["VIRAL_API_KEY"] == "cmd_..._123"
+    assert "cmd_secret_key_123" not in str(got)
+    assert got["VIRAL_PROVIDER"] == "openai"
+    assert got["VIRAL_MODEL"] == "claude-sonnet-5"
+
+    assert client.post(
+        "/api/config", json={"keys": {"VIRAL_PROVIDER": "other"}}
+    ).status_code == 422
+    assert client.post(
+        "/api/config", json={"keys": {"VIRAL_MODEL": "bad model; rm"}}
+    ).status_code == 422
+
+
 # --- cookies ----------------------------------------------------------------
 
 def test_cookies_upload_status_delete(client):
@@ -320,3 +366,33 @@ def test_zernio_discover_uses_selected_profile_key(client, monkeypatch):
     assert r.status_code == 200
     assert used["api_key"] == "sk_profile_key_b"
     assert r.json()["profile_id"] == pid
+
+
+def test_config_two_stage_keys_roundtrip_and_validation(client):
+    payload = {
+        "VIRAL_MODE": "two_stage",
+        "VIRAL_DISCOVERY_MODEL": "z-ai/glm-5.3-flash",
+        "VIRAL_REVIEW_MODEL": "claude-opus-5-5",
+        "VIRAL_COPY_MODEL": "",
+        "VIRAL_MAX_CANDIDATES": "32",
+        "VIRAL_MAX_SELECTED_CLIPS": "8",
+        "VIRAL_MIN_QUALITY": "6.5",
+        "VIRAL_TWO_STAGE_FALLBACK": "single",
+        "VIRAL_STAGE_MAX_ATTEMPTS": "2",
+    }
+    r = client.post("/api/config", json={"keys": payload})
+    assert r.status_code == 200
+    got = client.get("/api/config").json()
+    for key, value in payload.items():
+        if value:
+            assert got[key] == value
+
+    for key, value in {
+        "VIRAL_MODE": "triple",
+        "VIRAL_MAX_CANDIDATES": "2",
+        "VIRAL_MAX_SELECTED_CLIPS": "99",
+        "VIRAL_MIN_QUALITY": "11",
+        "VIRAL_TWO_STAGE_FALLBACK": "maybe",
+        "VIRAL_DISCOVERY_MODEL": "bad model; rm",
+    }.items():
+        assert client.post("/api/config", json={"keys": {key: value}}).status_code == 422, key

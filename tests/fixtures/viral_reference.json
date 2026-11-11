@@ -1,0 +1,7 @@
+{
+  "description": "Manually reviewed preferred ranges for tests/fixtures/viral_transcript.json (small reference set, not a benchmark).",
+  "ranges": [
+    [0.0, 40.2],
+    [101.6, 128.4]
+  ]
+}

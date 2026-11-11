@@ -24,6 +24,27 @@ VALID_CONFIG_KEYS = (
     "OPENAI_CAPTIONS_BASE_URL",
     "OPENAI_CAPTIONS_API_KEY",
     "OPENAI_CAPTIONS_MODEL",
+    # Viral-moment provider selection (gemini | openai/Command Code).
+    "VIRAL_PROVIDER",
+    "VIRAL_BASE_URL",
+    "VIRAL_API_KEY",
+    "VIRAL_MODEL",
+    "VIRAL_FALLBACK_MODELS",
+    # Two-stage discovery → editorial review (CommandCode).
+    "VIRAL_MODE",
+    "VIRAL_DISCOVERY_MODEL",
+    "VIRAL_REVIEW_MODEL",
+    "VIRAL_COPY_MODEL",
+    "VIRAL_MAX_CANDIDATES",
+    "VIRAL_MAX_SELECTED_CLIPS",
+    "VIRAL_MIN_QUALITY",
+    "VIRAL_MAX_ANALYSIS_COST",
+    "VIRAL_TWO_STAGE_FALLBACK",
+    "VIRAL_STAGE_MAX_ATTEMPTS",
+    "VIRAL_DISCOVERY_FALLBACK_MODELS",
+    "VIRAL_REVIEW_FALLBACK_MODELS",
+    "VIRAL_COPY_FALLBACK_MODELS",
+    "VIRAL_REASONING_EFFORT",
 )
 ZERNIO_CONFIG_NAMESPACE = "zernio"
 ZERNIO_DEFAULT_TIMEZONE = os.environ.get("ZERNIO_DEFAULT_TZ", "America/New_York")
@@ -439,6 +460,39 @@ def load_persistent_config() -> dict:
         "OPENAI_CAPTIONS_BASE_URL": os.environ.get("OPENAI_CAPTIONS_BASE_URL", "https://api.openai.com/v1"),
         "OPENAI_CAPTIONS_API_KEY": os.environ.get("OPENAI_CAPTIONS_API_KEY", ""),
         "OPENAI_CAPTIONS_MODEL": os.environ.get("OPENAI_CAPTIONS_MODEL", "gpt-4o-mini"),
+        "VIRAL_PROVIDER": os.environ.get("VIRAL_PROVIDER", "gemini"),
+        "VIRAL_BASE_URL": os.environ.get(
+            "VIRAL_BASE_URL", "https://api.commandcode.ai/provider/v1"
+        ),
+        "VIRAL_API_KEY": os.environ.get("VIRAL_API_KEY", ""),
+        "VIRAL_MODEL": os.environ.get("VIRAL_MODEL", ""),
+        "VIRAL_FALLBACK_MODELS": os.environ.get(
+            "VIRAL_FALLBACK_MODELS", "claude-sonnet-5-5"
+        ),
+        "VIRAL_MODE": os.environ.get("VIRAL_MODE", "auto"),
+        "VIRAL_DISCOVERY_MODEL": os.environ.get(
+            "VIRAL_DISCOVERY_MODEL", "z-ai/glm-5.3-flash"
+        ),
+        "VIRAL_REVIEW_MODEL": os.environ.get(
+            "VIRAL_REVIEW_MODEL", "claude-opus-5-5"
+        ),
+        "VIRAL_COPY_MODEL": os.environ.get("VIRAL_COPY_MODEL", ""),
+        "VIRAL_MAX_CANDIDATES": os.environ.get("VIRAL_MAX_CANDIDATES", "32"),
+        "VIRAL_MAX_SELECTED_CLIPS": os.environ.get("VIRAL_MAX_SELECTED_CLIPS", "8"),
+        "VIRAL_MIN_QUALITY": os.environ.get("VIRAL_MIN_QUALITY", "6.0"),
+        "VIRAL_MAX_ANALYSIS_COST": os.environ.get("VIRAL_MAX_ANALYSIS_COST", "0"),
+        "VIRAL_TWO_STAGE_FALLBACK": os.environ.get("VIRAL_TWO_STAGE_FALLBACK", "single"),
+        "VIRAL_STAGE_MAX_ATTEMPTS": os.environ.get("VIRAL_STAGE_MAX_ATTEMPTS", "2"),
+        "VIRAL_DISCOVERY_FALLBACK_MODELS": os.environ.get(
+            "VIRAL_DISCOVERY_FALLBACK_MODELS", "z-ai/glm-5.3-flashx"
+        ),
+        "VIRAL_REVIEW_FALLBACK_MODELS": os.environ.get(
+            "VIRAL_REVIEW_FALLBACK_MODELS", "claude-sonnet-5-5"
+        ),
+        "VIRAL_COPY_FALLBACK_MODELS": os.environ.get(
+            "VIRAL_COPY_FALLBACK_MODELS", ""
+        ),
+        "VIRAL_REASONING_EFFORT": os.environ.get("VIRAL_REASONING_EFFORT", "low"),
     }
     raw = _read_raw_config()
     config.update({key: value for key, value in raw.items() if key in VALID_CONFIG_KEYS})

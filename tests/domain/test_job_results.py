@@ -110,12 +110,23 @@ def test_model_future_gemini_family_accepted():
     assert cmd[cmd.index("--model") + 1] == "gemini-3-pro"
 
 
-@pytest.mark.parametrize("bad", [
+@pytest.mark.parametrize("model", [
+    "gemini-2.5-pro",
+    "gemini-3-pro",
     "gpt-4o",
-    "gemini",
+    "claude-sonnet-5",
+    "deepseek/deepseek-v4-flash",
+    "stealth/glyph-cluster:free",
+])
+def test_model_accepts_provider_catalog_ids(model):
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o", model=model)
+    assert cmd[cmd.index("--model") + 1] == model
+
+
+@pytest.mark.parametrize("bad", [
     "gemini-2.5-pro; rm -rf",
     "--inject",
-    "gemini-" + "x" * 100,
+    "gemini-" + "x" * 130,
 ])
 def test_model_rejects_invalid(bad):
     with pytest.raises(ValueError):
@@ -225,3 +236,13 @@ def test_load_final_result_includes_runtime_operations(tmp_path):
     result = load_final_result("job1", str(tmp_path))
     assert result["operations"]["stage"] == "quality"
     assert result["operations"]["progress"] == 92
+
+
+def test_target_clips_forwarded_and_validated():
+    cmd = build_main_cmd(url="https://x.com/v", output_dir="o", target_clips=7)
+    assert cmd[cmd.index("--target-clips") + 1] == "7"
+    assert "--target-clips" not in build_main_cmd(url="https://x.com/v", output_dir="o")
+    with pytest.raises(ValueError):
+        build_main_cmd(url="https://x.com/v", output_dir="o", target_clips=0)
+    with pytest.raises(ValueError):
+        build_main_cmd(url="https://x.com/v", output_dir="o", target_clips=51)

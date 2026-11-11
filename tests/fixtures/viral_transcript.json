@@ -1,0 +1,2112 @@
+{
+  "text": "People think the hardest part of building a startup is the idea. It isn't. I spent seven years building a company that almost died because of one spreadsheet mistake. We had twelve thousand dollars left. I opened the bank account and the number was negative forty thousand. My co-founder said, we're done. Then I found the error. Our payment processor had charged every customer twice for six months. We refunded everyone, and the next morning we had more cash than the day we launched. The lesson? Most startup emergencies are just accounting errors with better marketing. But the strangest part happened a week later. A customer emailed to thank us for the refund and asked if we could charge him again because he wanted to support the company. That single email raised more money than our first investor. Now let me tell you about the worst hiring decision I ever made. I hired a brilliant engineer who refused to talk to customers. For eight months he built exactly what we asked for, and exactly none of what they needed. The product looked perfect in every demo. In real life, people opened it, stared at it, and closed it. Our retention dropped from forty percent to eleven percent in one quarter. I finally sat next to a customer for three hours and watched her use the thing. She never once clicked the button we were most proud of. She used a spreadsheet instead. That afternoon I deleted half the product. The team thought I had lost my mind. Revenue went up nineteen percent the following month because the remaining half was actually useful. Here is the counterintuitive part: the feature we deleted was the one investors had praised the most. They were not the user. They were a different audience with a different job to be done. If you only remember one thing, remember this. Your smartest employee can still be pointed at the wrong problem. Proximity to the customer beats intelligence in the room. The best advice I ever got came from a janitor in our first office. He said, you keep moving the furniture around, but the door is still locked. It took me two years to understand what he meant.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.956,
+      "text": "People think the hardest part of building a startup is the idea.",
+      "words": [
+        {
+          "word": "People",
+          "start": 0.0,
+          "end": 0.336
+        },
+        {
+          "word": "think",
+          "start": 0.42,
+          "end": 0.756
+        },
+        {
+          "word": "the",
+          "start": 0.84,
+          "end": 1.176
+        },
+        {
+          "word": "hardest",
+          "start": 1.26,
+          "end": 1.596
+        },
+        {
+          "word": "part",
+          "start": 1.68,
+          "end": 2.016
+        },
+        {
+          "word": "of",
+          "start": 2.1,
+          "end": 2.436
+        },
+        {
+          "word": "building",
+          "start": 2.52,
+          "end": 2.856
+        },
+        {
+          "word": "a",
+          "start": 2.94,
+          "end": 3.276
+        },
+        {
+          "word": "startup",
+          "start": 3.36,
+          "end": 3.696
+        },
+        {
+          "word": "is",
+          "start": 3.78,
+          "end": 4.116
+        },
+        {
+          "word": "the",
+          "start": 4.2,
+          "end": 4.536
+        },
+        {
+          "word": "idea.",
+          "start": 4.62,
+          "end": 4.956
+        }
+      ]
+    },
+    {
+      "start": 5.04,
+      "end": 5.796,
+      "text": "It isn't.",
+      "words": [
+        {
+          "word": "It",
+          "start": 5.04,
+          "end": 5.376
+        },
+        {
+          "word": "isn't.",
+          "start": 5.46,
+          "end": 5.796
+        }
+      ]
+    },
+    {
+      "start": 5.88,
+      "end": 12.096,
+      "text": "I spent seven years building a company that almost died because of one spreadsheet mistake.",
+      "words": [
+        {
+          "word": "I",
+          "start": 5.88,
+          "end": 6.216
+        },
+        {
+          "word": "spent",
+          "start": 6.3,
+          "end": 6.636
+        },
+        {
+          "word": "seven",
+          "start": 6.72,
+          "end": 7.056
+        },
+        {
+          "word": "years",
+          "start": 7.14,
+          "end": 7.476
+        },
+        {
+          "word": "building",
+          "start": 7.56,
+          "end": 7.896
+        },
+        {
+          "word": "a",
+          "start": 7.98,
+          "end": 8.316
+        },
+        {
+          "word": "company",
+          "start": 8.4,
+          "end": 8.736
+        },
+        {
+          "word": "that",
+          "start": 8.82,
+          "end": 9.156
+        },
+        {
+          "word": "almost",
+          "start": 9.24,
+          "end": 9.576
+        },
+        {
+          "word": "died",
+          "start": 9.66,
+          "end": 9.996
+        },
+        {
+          "word": "because",
+          "start": 10.08,
+          "end": 10.416
+        },
+        {
+          "word": "of",
+          "start": 10.5,
+          "end": 10.836
+        },
+        {
+          "word": "one",
+          "start": 10.92,
+          "end": 11.256
+        },
+        {
+          "word": "spreadsheet",
+          "start": 11.34,
+          "end": 11.676
+        },
+        {
+          "word": "mistake.",
+          "start": 11.76,
+          "end": 12.096
+        }
+      ]
+    },
+    {
+      "start": 12.18,
+      "end": 14.616,
+      "text": "We had twelve thousand dollars left.",
+      "words": [
+        {
+          "word": "We",
+          "start": 12.18,
+          "end": 12.516
+        },
+        {
+          "word": "had",
+          "start": 12.6,
+          "end": 12.936
+        },
+        {
+          "word": "twelve",
+          "start": 13.02,
+          "end": 13.356
+        },
+        {
+          "word": "thousand",
+          "start": 13.44,
+          "end": 13.776
+        },
+        {
+          "word": "dollars",
+          "start": 13.86,
+          "end": 14.196
+        },
+        {
+          "word": "left.",
+          "start": 14.28,
+          "end": 14.616
+        }
+      ]
+    },
+    {
+      "start": 14.7,
+      "end": 19.656,
+      "text": "I opened the bank account and the number was negative forty thousand.",
+      "words": [
+        {
+          "word": "I",
+          "start": 14.7,
+          "end": 15.036
+        },
+        {
+          "word": "opened",
+          "start": 15.12,
+          "end": 15.456
+        },
+        {
+          "word": "the",
+          "start": 15.54,
+          "end": 15.876
+        },
+        {
+          "word": "bank",
+          "start": 15.96,
+          "end": 16.296
+        },
+        {
+          "word": "account",
+          "start": 16.38,
+          "end": 16.716
+        },
+        {
+          "word": "and",
+          "start": 16.8,
+          "end": 17.136
+        },
+        {
+          "word": "the",
+          "start": 17.22,
+          "end": 17.556
+        },
+        {
+          "word": "number",
+          "start": 17.64,
+          "end": 17.976
+        },
+        {
+          "word": "was",
+          "start": 18.06,
+          "end": 18.396
+        },
+        {
+          "word": "negative",
+          "start": 18.48,
+          "end": 18.816
+        },
+        {
+          "word": "forty",
+          "start": 18.9,
+          "end": 19.236
+        },
+        {
+          "word": "thousand.",
+          "start": 19.32,
+          "end": 19.656
+        }
+      ]
+    },
+    {
+      "start": 19.74,
+      "end": 21.756,
+      "text": "My co-founder said, we're done.",
+      "words": [
+        {
+          "word": "My",
+          "start": 19.74,
+          "end": 20.076
+        },
+        {
+          "word": "co-founder",
+          "start": 20.16,
+          "end": 20.496
+        },
+        {
+          "word": "said,",
+          "start": 20.58,
+          "end": 20.916
+        },
+        {
+          "word": "we're",
+          "start": 21.0,
+          "end": 21.336
+        },
+        {
+          "word": "done.",
+          "start": 21.42,
+          "end": 21.756
+        }
+      ]
+    },
+    {
+      "start": 21.84,
+      "end": 23.856,
+      "text": "Then I found the error.",
+      "words": [
+        {
+          "word": "Then",
+          "start": 21.84,
+          "end": 22.176
+        },
+        {
+          "word": "I",
+          "start": 22.26,
+          "end": 22.596
+        },
+        {
+          "word": "found",
+          "start": 22.68,
+          "end": 23.016
+        },
+        {
+          "word": "the",
+          "start": 23.1,
+          "end": 23.436
+        },
+        {
+          "word": "error.",
+          "start": 23.52,
+          "end": 23.856
+        }
+      ]
+    },
+    {
+      "start": 23.94,
+      "end": 28.476,
+      "text": "Our payment processor had charged every customer twice for six months.",
+      "words": [
+        {
+          "word": "Our",
+          "start": 23.94,
+          "end": 24.276
+        },
+        {
+          "word": "payment",
+          "start": 24.36,
+          "end": 24.696
+        },
+        {
+          "word": "processor",
+          "start": 24.78,
+          "end": 25.116
+        },
+        {
+          "word": "had",
+          "start": 25.2,
+          "end": 25.536
+        },
+        {
+          "word": "charged",
+          "start": 25.62,
+          "end": 25.956
+        },
+        {
+          "word": "every",
+          "start": 26.04,
+          "end": 26.376
+        },
+        {
+          "word": "customer",
+          "start": 26.46,
+          "end": 26.796
+        },
+        {
+          "word": "twice",
+          "start": 26.88,
+          "end": 27.216
+        },
+        {
+          "word": "for",
+          "start": 27.3,
+          "end": 27.636
+        },
+        {
+          "word": "six",
+          "start": 27.72,
+          "end": 28.056
+        },
+        {
+          "word": "months.",
+          "start": 28.14,
+          "end": 28.476
+        }
+      ]
+    },
+    {
+      "start": 28.56,
+      "end": 35.196,
+      "text": "We refunded everyone, and the next morning we had more cash than the day we launched.",
+      "words": [
+        {
+          "word": "We",
+          "start": 28.56,
+          "end": 28.896
+        },
+        {
+          "word": "refunded",
+          "start": 28.98,
+          "end": 29.316
+        },
+        {
+          "word": "everyone,",
+          "start": 29.4,
+          "end": 29.736
+        },
+        {
+          "word": "and",
+          "start": 29.82,
+          "end": 30.156
+        },
+        {
+          "word": "the",
+          "start": 30.24,
+          "end": 30.576
+        },
+        {
+          "word": "next",
+          "start": 30.66,
+          "end": 30.996
+        },
+        {
+          "word": "morning",
+          "start": 31.08,
+          "end": 31.416
+        },
+        {
+          "word": "we",
+          "start": 31.5,
+          "end": 31.836
+        },
+        {
+          "word": "had",
+          "start": 31.92,
+          "end": 32.256
+        },
+        {
+          "word": "more",
+          "start": 32.34,
+          "end": 32.676
+        },
+        {
+          "word": "cash",
+          "start": 32.76,
+          "end": 33.096
+        },
+        {
+          "word": "than",
+          "start": 33.18,
+          "end": 33.516
+        },
+        {
+          "word": "the",
+          "start": 33.6,
+          "end": 33.936
+        },
+        {
+          "word": "day",
+          "start": 34.02,
+          "end": 34.356
+        },
+        {
+          "word": "we",
+          "start": 34.44,
+          "end": 34.776
+        },
+        {
+          "word": "launched.",
+          "start": 34.86,
+          "end": 35.196
+        }
+      ]
+    },
+    {
+      "start": 35.28,
+      "end": 36.036,
+      "text": "The lesson?",
+      "words": [
+        {
+          "word": "The",
+          "start": 35.28,
+          "end": 35.616
+        },
+        {
+          "word": "lesson?",
+          "start": 35.7,
+          "end": 36.036
+        }
+      ]
+    },
+    {
+      "start": 36.12,
+      "end": 40.236,
+      "text": "Most startup emergencies are just accounting errors with better marketing.",
+      "words": [
+        {
+          "word": "Most",
+          "start": 36.12,
+          "end": 36.456
+        },
+        {
+          "word": "startup",
+          "start": 36.54,
+          "end": 36.876
+        },
+        {
+          "word": "emergencies",
+          "start": 36.96,
+          "end": 37.296
+        },
+        {
+          "word": "are",
+          "start": 37.38,
+          "end": 37.716
+        },
+        {
+          "word": "just",
+          "start": 37.8,
+          "end": 38.136
+        },
+        {
+          "word": "accounting",
+          "start": 38.22,
+          "end": 38.556
+        },
+        {
+          "word": "errors",
+          "start": 38.64,
+          "end": 38.976
+        },
+        {
+          "word": "with",
+          "start": 39.06,
+          "end": 39.396
+        },
+        {
+          "word": "better",
+          "start": 39.48,
+          "end": 39.816
+        },
+        {
+          "word": "marketing.",
+          "start": 39.9,
+          "end": 40.236
+        }
+      ]
+    },
+    {
+      "start": 40.32,
+      "end": 43.596,
+      "text": "But the strangest part happened a week later.",
+      "words": [
+        {
+          "word": "But",
+          "start": 40.32,
+          "end": 40.656
+        },
+        {
+          "word": "the",
+          "start": 40.74,
+          "end": 41.076
+        },
+        {
+          "word": "strangest",
+          "start": 41.16,
+          "end": 41.496
+        },
+        {
+          "word": "part",
+          "start": 41.58,
+          "end": 41.916
+        },
+        {
+          "word": "happened",
+          "start": 42.0,
+          "end": 42.336
+        },
+        {
+          "word": "a",
+          "start": 42.42,
+          "end": 42.756
+        },
+        {
+          "word": "week",
+          "start": 42.84,
+          "end": 43.176
+        },
+        {
+          "word": "later.",
+          "start": 43.26,
+          "end": 43.596
+        }
+      ]
+    },
+    {
+      "start": 43.68,
+      "end": 53.676,
+      "text": "A customer emailed to thank us for the refund and asked if we could charge him again because he wanted to support the company.",
+      "words": [
+        {
+          "word": "A",
+          "start": 43.68,
+          "end": 44.016
+        },
+        {
+          "word": "customer",
+          "start": 44.1,
+          "end": 44.436
+        },
+        {
+          "word": "emailed",
+          "start": 44.52,
+          "end": 44.856
+        },
+        {
+          "word": "to",
+          "start": 44.94,
+          "end": 45.276
+        },
+        {
+          "word": "thank",
+          "start": 45.36,
+          "end": 45.696
+        },
+        {
+          "word": "us",
+          "start": 45.78,
+          "end": 46.116
+        },
+        {
+          "word": "for",
+          "start": 46.2,
+          "end": 46.536
+        },
+        {
+          "word": "the",
+          "start": 46.62,
+          "end": 46.956
+        },
+        {
+          "word": "refund",
+          "start": 47.04,
+          "end": 47.376
+        },
+        {
+          "word": "and",
+          "start": 47.46,
+          "end": 47.796
+        },
+        {
+          "word": "asked",
+          "start": 47.88,
+          "end": 48.216
+        },
+        {
+          "word": "if",
+          "start": 48.3,
+          "end": 48.636
+        },
+        {
+          "word": "we",
+          "start": 48.72,
+          "end": 49.056
+        },
+        {
+          "word": "could",
+          "start": 49.14,
+          "end": 49.476
+        },
+        {
+          "word": "charge",
+          "start": 49.56,
+          "end": 49.896
+        },
+        {
+          "word": "him",
+          "start": 49.98,
+          "end": 50.316
+        },
+        {
+          "word": "again",
+          "start": 50.4,
+          "end": 50.736
+        },
+        {
+          "word": "because",
+          "start": 50.82,
+          "end": 51.156
+        },
+        {
+          "word": "he",
+          "start": 51.24,
+          "end": 51.576
+        },
+        {
+          "word": "wanted",
+          "start": 51.66,
+          "end": 51.996
+        },
+        {
+          "word": "to",
+          "start": 52.08,
+          "end": 52.416
+        },
+        {
+          "word": "support",
+          "start": 52.5,
+          "end": 52.836
+        },
+        {
+          "word": "the",
+          "start": 52.92,
+          "end": 53.256
+        },
+        {
+          "word": "company.",
+          "start": 53.34,
+          "end": 53.676
+        }
+      ]
+    },
+    {
+      "start": 53.76,
+      "end": 57.876,
+      "text": "That single email raised more money than our first investor.",
+      "words": [
+        {
+          "word": "That",
+          "start": 53.76,
+          "end": 54.096
+        },
+        {
+          "word": "single",
+          "start": 54.18,
+          "end": 54.516
+        },
+        {
+          "word": "email",
+          "start": 54.6,
+          "end": 54.936
+        },
+        {
+          "word": "raised",
+          "start": 55.02,
+          "end": 55.356
+        },
+        {
+          "word": "more",
+          "start": 55.44,
+          "end": 55.776
+        },
+        {
+          "word": "money",
+          "start": 55.86,
+          "end": 56.196
+        },
+        {
+          "word": "than",
+          "start": 56.28,
+          "end": 56.616
+        },
+        {
+          "word": "our",
+          "start": 56.7,
+          "end": 57.036
+        },
+        {
+          "word": "first",
+          "start": 57.12,
+          "end": 57.456
+        },
+        {
+          "word": "investor.",
+          "start": 57.54,
+          "end": 57.876
+        }
+      ]
+    },
+    {
+      "start": 57.96,
+      "end": 63.336,
+      "text": "Now let me tell you about the worst hiring decision I ever made.",
+      "words": [
+        {
+          "word": "Now",
+          "start": 57.96,
+          "end": 58.296
+        },
+        {
+          "word": "let",
+          "start": 58.38,
+          "end": 58.716
+        },
+        {
+          "word": "me",
+          "start": 58.8,
+          "end": 59.136
+        },
+        {
+          "word": "tell",
+          "start": 59.22,
+          "end": 59.556
+        },
+        {
+          "word": "you",
+          "start": 59.64,
+          "end": 59.976
+        },
+        {
+          "word": "about",
+          "start": 60.06,
+          "end": 60.396
+        },
+        {
+          "word": "the",
+          "start": 60.48,
+          "end": 60.816
+        },
+        {
+          "word": "worst",
+          "start": 60.9,
+          "end": 61.236
+        },
+        {
+          "word": "hiring",
+          "start": 61.32,
+          "end": 61.656
+        },
+        {
+          "word": "decision",
+          "start": 61.74,
+          "end": 62.076
+        },
+        {
+          "word": "I",
+          "start": 62.16,
+          "end": 62.496
+        },
+        {
+          "word": "ever",
+          "start": 62.58,
+          "end": 62.916
+        },
+        {
+          "word": "made.",
+          "start": 63.0,
+          "end": 63.336
+        }
+      ]
+    },
+    {
+      "start": 63.42,
+      "end": 67.956,
+      "text": "I hired a brilliant engineer who refused to talk to customers.",
+      "words": [
+        {
+          "word": "I",
+          "start": 63.42,
+          "end": 63.756
+        },
+        {
+          "word": "hired",
+          "start": 63.84,
+          "end": 64.176
+        },
+        {
+          "word": "a",
+          "start": 64.26,
+          "end": 64.596
+        },
+        {
+          "word": "brilliant",
+          "start": 64.68,
+          "end": 65.016
+        },
+        {
+          "word": "engineer",
+          "start": 65.1,
+          "end": 65.436
+        },
+        {
+          "word": "who",
+          "start": 65.52,
+          "end": 65.856
+        },
+        {
+          "word": "refused",
+          "start": 65.94,
+          "end": 66.276
+        },
+        {
+          "word": "to",
+          "start": 66.36,
+          "end": 66.696
+        },
+        {
+          "word": "talk",
+          "start": 66.78,
+          "end": 67.116
+        },
+        {
+          "word": "to",
+          "start": 67.2,
+          "end": 67.536
+        },
+        {
+          "word": "customers.",
+          "start": 67.62,
+          "end": 67.956
+        }
+      ]
+    },
+    {
+      "start": 68.04,
+      "end": 75.096,
+      "text": "For eight months he built exactly what we asked for, and exactly none of what they needed.",
+      "words": [
+        {
+          "word": "For",
+          "start": 68.04,
+          "end": 68.376
+        },
+        {
+          "word": "eight",
+          "start": 68.46,
+          "end": 68.796
+        },
+        {
+          "word": "months",
+          "start": 68.88,
+          "end": 69.216
+        },
+        {
+          "word": "he",
+          "start": 69.3,
+          "end": 69.636
+        },
+        {
+          "word": "built",
+          "start": 69.72,
+          "end": 70.056
+        },
+        {
+          "word": "exactly",
+          "start": 70.14,
+          "end": 70.476
+        },
+        {
+          "word": "what",
+          "start": 70.56,
+          "end": 70.896
+        },
+        {
+          "word": "we",
+          "start": 70.98,
+          "end": 71.316
+        },
+        {
+          "word": "asked",
+          "start": 71.4,
+          "end": 71.736
+        },
+        {
+          "word": "for,",
+          "start": 71.82,
+          "end": 72.156
+        },
+        {
+          "word": "and",
+          "start": 72.24,
+          "end": 72.576
+        },
+        {
+          "word": "exactly",
+          "start": 72.66,
+          "end": 72.996
+        },
+        {
+          "word": "none",
+          "start": 73.08,
+          "end": 73.416
+        },
+        {
+          "word": "of",
+          "start": 73.5,
+          "end": 73.836
+        },
+        {
+          "word": "what",
+          "start": 73.92,
+          "end": 74.256
+        },
+        {
+          "word": "they",
+          "start": 74.34,
+          "end": 74.676
+        },
+        {
+          "word": "needed.",
+          "start": 74.76,
+          "end": 75.096
+        }
+      ]
+    },
+    {
+      "start": 75.18,
+      "end": 78.036,
+      "text": "The product looked perfect in every demo.",
+      "words": [
+        {
+          "word": "The",
+          "start": 75.18,
+          "end": 75.516
+        },
+        {
+          "word": "product",
+          "start": 75.6,
+          "end": 75.936
+        },
+        {
+          "word": "looked",
+          "start": 76.02,
+          "end": 76.356
+        },
+        {
+          "word": "perfect",
+          "start": 76.44,
+          "end": 76.776
+        },
+        {
+          "word": "in",
+          "start": 76.86,
+          "end": 77.196
+        },
+        {
+          "word": "every",
+          "start": 77.28,
+          "end": 77.616
+        },
+        {
+          "word": "demo.",
+          "start": 77.7,
+          "end": 78.036
+        }
+      ]
+    },
+    {
+      "start": 78.12,
+      "end": 83.076,
+      "text": "In real life, people opened it, stared at it, and closed it.",
+      "words": [
+        {
+          "word": "In",
+          "start": 78.12,
+          "end": 78.456
+        },
+        {
+          "word": "real",
+          "start": 78.54,
+          "end": 78.876
+        },
+        {
+          "word": "life,",
+          "start": 78.96,
+          "end": 79.296
+        },
+        {
+          "word": "people",
+          "start": 79.38,
+          "end": 79.716
+        },
+        {
+          "word": "opened",
+          "start": 79.8,
+          "end": 80.136
+        },
+        {
+          "word": "it,",
+          "start": 80.22,
+          "end": 80.556
+        },
+        {
+          "word": "stared",
+          "start": 80.64,
+          "end": 80.976
+        },
+        {
+          "word": "at",
+          "start": 81.06,
+          "end": 81.396
+        },
+        {
+          "word": "it,",
+          "start": 81.48,
+          "end": 81.816
+        },
+        {
+          "word": "and",
+          "start": 81.9,
+          "end": 82.236
+        },
+        {
+          "word": "closed",
+          "start": 82.32,
+          "end": 82.656
+        },
+        {
+          "word": "it.",
+          "start": 82.74,
+          "end": 83.076
+        }
+      ]
+    },
+    {
+      "start": 83.16,
+      "end": 88.116,
+      "text": "Our retention dropped from forty percent to eleven percent in one quarter.",
+      "words": [
+        {
+          "word": "Our",
+          "start": 83.16,
+          "end": 83.496
+        },
+        {
+          "word": "retention",
+          "start": 83.58,
+          "end": 83.916
+        },
+        {
+          "word": "dropped",
+          "start": 84.0,
+          "end": 84.336
+        },
+        {
+          "word": "from",
+          "start": 84.42,
+          "end": 84.756
+        },
+        {
+          "word": "forty",
+          "start": 84.84,
+          "end": 85.176
+        },
+        {
+          "word": "percent",
+          "start": 85.26,
+          "end": 85.596
+        },
+        {
+          "word": "to",
+          "start": 85.68,
+          "end": 86.016
+        },
+        {
+          "word": "eleven",
+          "start": 86.1,
+          "end": 86.436
+        },
+        {
+          "word": "percent",
+          "start": 86.52,
+          "end": 86.856
+        },
+        {
+          "word": "in",
+          "start": 86.94,
+          "end": 87.276
+        },
+        {
+          "word": "one",
+          "start": 87.36,
+          "end": 87.696
+        },
+        {
+          "word": "quarter.",
+          "start": 87.78,
+          "end": 88.116
+        }
+      ]
+    },
+    {
+      "start": 88.2,
+      "end": 94.836,
+      "text": "I finally sat next to a customer for three hours and watched her use the thing.",
+      "words": [
+        {
+          "word": "I",
+          "start": 88.2,
+          "end": 88.536
+        },
+        {
+          "word": "finally",
+          "start": 88.62,
+          "end": 88.956
+        },
+        {
+          "word": "sat",
+          "start": 89.04,
+          "end": 89.376
+        },
+        {
+          "word": "next",
+          "start": 89.46,
+          "end": 89.796
+        },
+        {
+          "word": "to",
+          "start": 89.88,
+          "end": 90.216
+        },
+        {
+          "word": "a",
+          "start": 90.3,
+          "end": 90.636
+        },
+        {
+          "word": "customer",
+          "start": 90.72,
+          "end": 91.056
+        },
+        {
+          "word": "for",
+          "start": 91.14,
+          "end": 91.476
+        },
+        {
+          "word": "three",
+          "start": 91.56,
+          "end": 91.896
+        },
+        {
+          "word": "hours",
+          "start": 91.98,
+          "end": 92.316
+        },
+        {
+          "word": "and",
+          "start": 92.4,
+          "end": 92.736
+        },
+        {
+          "word": "watched",
+          "start": 92.82,
+          "end": 93.156
+        },
+        {
+          "word": "her",
+          "start": 93.24,
+          "end": 93.576
+        },
+        {
+          "word": "use",
+          "start": 93.66,
+          "end": 93.996
+        },
+        {
+          "word": "the",
+          "start": 94.08,
+          "end": 94.416
+        },
+        {
+          "word": "thing.",
+          "start": 94.5,
+          "end": 94.836
+        }
+      ]
+    },
+    {
+      "start": 94.92,
+      "end": 99.456,
+      "text": "She never once clicked the button we were most proud of.",
+      "words": [
+        {
+          "word": "She",
+          "start": 94.92,
+          "end": 95.256
+        },
+        {
+          "word": "never",
+          "start": 95.34,
+          "end": 95.676
+        },
+        {
+          "word": "once",
+          "start": 95.76,
+          "end": 96.096
+        },
+        {
+          "word": "clicked",
+          "start": 96.18,
+          "end": 96.516
+        },
+        {
+          "word": "the",
+          "start": 96.6,
+          "end": 96.936
+        },
+        {
+          "word": "button",
+          "start": 97.02,
+          "end": 97.356
+        },
+        {
+          "word": "we",
+          "start": 97.44,
+          "end": 97.776
+        },
+        {
+          "word": "were",
+          "start": 97.86,
+          "end": 98.196
+        },
+        {
+          "word": "most",
+          "start": 98.28,
+          "end": 98.616
+        },
+        {
+          "word": "proud",
+          "start": 98.7,
+          "end": 99.036
+        },
+        {
+          "word": "of.",
+          "start": 99.12,
+          "end": 99.456
+        }
+      ]
+    },
+    {
+      "start": 99.54,
+      "end": 101.556,
+      "text": "She used a spreadsheet instead.",
+      "words": [
+        {
+          "word": "She",
+          "start": 99.54,
+          "end": 99.876
+        },
+        {
+          "word": "used",
+          "start": 99.96,
+          "end": 100.296
+        },
+        {
+          "word": "a",
+          "start": 100.38,
+          "end": 100.716
+        },
+        {
+          "word": "spreadsheet",
+          "start": 100.8,
+          "end": 101.136
+        },
+        {
+          "word": "instead.",
+          "start": 101.22,
+          "end": 101.556
+        }
+      ]
+    },
+    {
+      "start": 101.64,
+      "end": 104.496,
+      "text": "That afternoon I deleted half the product.",
+      "words": [
+        {
+          "word": "That",
+          "start": 101.64,
+          "end": 101.976
+        },
+        {
+          "word": "afternoon",
+          "start": 102.06,
+          "end": 102.396
+        },
+        {
+          "word": "I",
+          "start": 102.48,
+          "end": 102.816
+        },
+        {
+          "word": "deleted",
+          "start": 102.9,
+          "end": 103.236
+        },
+        {
+          "word": "half",
+          "start": 103.32,
+          "end": 103.656
+        },
+        {
+          "word": "the",
+          "start": 103.74,
+          "end": 104.076
+        },
+        {
+          "word": "product.",
+          "start": 104.16,
+          "end": 104.496
+        }
+      ]
+    },
+    {
+      "start": 104.58,
+      "end": 107.856,
+      "text": "The team thought I had lost my mind.",
+      "words": [
+        {
+          "word": "The",
+          "start": 104.58,
+          "end": 104.916
+        },
+        {
+          "word": "team",
+          "start": 105.0,
+          "end": 105.336
+        },
+        {
+          "word": "thought",
+          "start": 105.42,
+          "end": 105.756
+        },
+        {
+          "word": "I",
+          "start": 105.84,
+          "end": 106.176
+        },
+        {
+          "word": "had",
+          "start": 106.26,
+          "end": 106.596
+        },
+        {
+          "word": "lost",
+          "start": 106.68,
+          "end": 107.016
+        },
+        {
+          "word": "my",
+          "start": 107.1,
+          "end": 107.436
+        },
+        {
+          "word": "mind.",
+          "start": 107.52,
+          "end": 107.856
+        }
+      ]
+    },
+    {
+      "start": 107.94,
+      "end": 114.156,
+      "text": "Revenue went up nineteen percent the following month because the remaining half was actually useful.",
+      "words": [
+        {
+          "word": "Revenue",
+          "start": 107.94,
+          "end": 108.276
+        },
+        {
+          "word": "went",
+          "start": 108.36,
+          "end": 108.696
+        },
+        {
+          "word": "up",
+          "start": 108.78,
+          "end": 109.116
+        },
+        {
+          "word": "nineteen",
+          "start": 109.2,
+          "end": 109.536
+        },
+        {
+          "word": "percent",
+          "start": 109.62,
+          "end": 109.956
+        },
+        {
+          "word": "the",
+          "start": 110.04,
+          "end": 110.376
+        },
+        {
+          "word": "following",
+          "start": 110.46,
+          "end": 110.796
+        },
+        {
+          "word": "month",
+          "start": 110.88,
+          "end": 111.216
+        },
+        {
+          "word": "because",
+          "start": 111.3,
+          "end": 111.636
+        },
+        {
+          "word": "the",
+          "start": 111.72,
+          "end": 112.056
+        },
+        {
+          "word": "remaining",
+          "start": 112.14,
+          "end": 112.476
+        },
+        {
+          "word": "half",
+          "start": 112.56,
+          "end": 112.896
+        },
+        {
+          "word": "was",
+          "start": 112.98,
+          "end": 113.316
+        },
+        {
+          "word": "actually",
+          "start": 113.4,
+          "end": 113.736
+        },
+        {
+          "word": "useful.",
+          "start": 113.82,
+          "end": 114.156
+        }
+      ]
+    },
+    {
+      "start": 114.24,
+      "end": 121.296,
+      "text": "Here is the counterintuitive part: the feature we deleted was the one investors had praised the most.",
+      "words": [
+        {
+          "word": "Here",
+          "start": 114.24,
+          "end": 114.576
+        },
+        {
+          "word": "is",
+          "start": 114.66,
+          "end": 114.996
+        },
+        {
+          "word": "the",
+          "start": 115.08,
+          "end": 115.416
+        },
+        {
+          "word": "counterintuitive",
+          "start": 115.5,
+          "end": 115.836
+        },
+        {
+          "word": "part:",
+          "start": 115.92,
+          "end": 116.256
+        },
+        {
+          "word": "the",
+          "start": 116.34,
+          "end": 116.676
+        },
+        {
+          "word": "feature",
+          "start": 116.76,
+          "end": 117.096
+        },
+        {
+          "word": "we",
+          "start": 117.18,
+          "end": 117.516
+        },
+        {
+          "word": "deleted",
+          "start": 117.6,
+          "end": 117.936
+        },
+        {
+          "word": "was",
+          "start": 118.02,
+          "end": 118.356
+        },
+        {
+          "word": "the",
+          "start": 118.44,
+          "end": 118.776
+        },
+        {
+          "word": "one",
+          "start": 118.86,
+          "end": 119.196
+        },
+        {
+          "word": "investors",
+          "start": 119.28,
+          "end": 119.616
+        },
+        {
+          "word": "had",
+          "start": 119.7,
+          "end": 120.036
+        },
+        {
+          "word": "praised",
+          "start": 120.12,
+          "end": 120.456
+        },
+        {
+          "word": "the",
+          "start": 120.54,
+          "end": 120.876
+        },
+        {
+          "word": "most.",
+          "start": 120.96,
+          "end": 121.296
+        }
+      ]
+    },
+    {
+      "start": 121.38,
+      "end": 123.396,
+      "text": "They were not the user.",
+      "words": [
+        {
+          "word": "They",
+          "start": 121.38,
+          "end": 121.716
+        },
+        {
+          "word": "were",
+          "start": 121.8,
+          "end": 122.136
+        },
+        {
+          "word": "not",
+          "start": 122.22,
+          "end": 122.556
+        },
+        {
+          "word": "the",
+          "start": 122.64,
+          "end": 122.976
+        },
+        {
+          "word": "user.",
+          "start": 123.06,
+          "end": 123.396
+        }
+      ]
+    },
+    {
+      "start": 123.48,
+      "end": 128.436,
+      "text": "They were a different audience with a different job to be done.",
+      "words": [
+        {
+          "word": "They",
+          "start": 123.48,
+          "end": 123.816
+        },
+        {
+          "word": "were",
+          "start": 123.9,
+          "end": 124.236
+        },
+        {
+          "word": "a",
+          "start": 124.32,
+          "end": 124.656
+        },
+        {
+          "word": "different",
+          "start": 124.74,
+          "end": 125.076
+        },
+        {
+          "word": "audience",
+          "start": 125.16,
+          "end": 125.496
+        },
+        {
+          "word": "with",
+          "start": 125.58,
+          "end": 125.916
+        },
+        {
+          "word": "a",
+          "start": 126.0,
+          "end": 126.336
+        },
+        {
+          "word": "different",
+          "start": 126.42,
+          "end": 126.756
+        },
+        {
+          "word": "job",
+          "start": 126.84,
+          "end": 127.176
+        },
+        {
+          "word": "to",
+          "start": 127.26,
+          "end": 127.596
+        },
+        {
+          "word": "be",
+          "start": 127.68,
+          "end": 128.016
+        },
+        {
+          "word": "done.",
+          "start": 128.1,
+          "end": 128.436
+        }
+      ]
+    },
+    {
+      "start": 128.52,
+      "end": 131.796,
+      "text": "If you only remember one thing, remember this.",
+      "words": [
+        {
+          "word": "If",
+          "start": 128.52,
+          "end": 128.856
+        },
+        {
+          "word": "you",
+          "start": 128.94,
+          "end": 129.276
+        },
+        {
+          "word": "only",
+          "start": 129.36,
+          "end": 129.696
+        },
+        {
+          "word": "remember",
+          "start": 129.78,
+          "end": 130.116
+        },
+        {
+          "word": "one",
+          "start": 130.2,
+          "end": 130.536
+        },
+        {
+          "word": "thing,",
+          "start": 130.62,
+          "end": 130.956
+        },
+        {
+          "word": "remember",
+          "start": 131.04,
+          "end": 131.376
+        },
+        {
+          "word": "this.",
+          "start": 131.46,
+          "end": 131.796
+        }
+      ]
+    },
+    {
+      "start": 131.88,
+      "end": 136.416,
+      "text": "Your smartest employee can still be pointed at the wrong problem.",
+      "words": [
+        {
+          "word": "Your",
+          "start": 131.88,
+          "end": 132.216
+        },
+        {
+          "word": "smartest",
+          "start": 132.3,
+          "end": 132.636
+        },
+        {
+          "word": "employee",
+          "start": 132.72,
+          "end": 133.056
+        },
+        {
+          "word": "can",
+          "start": 133.14,
+          "end": 133.476
+        },
+        {
+          "word": "still",
+          "start": 133.56,
+          "end": 133.896
+        },
+        {
+          "word": "be",
+          "start": 133.98,
+          "end": 134.316
+        },
+        {
+          "word": "pointed",
+          "start": 134.4,
+          "end": 134.736
+        },
+        {
+          "word": "at",
+          "start": 134.82,
+          "end": 135.156
+        },
+        {
+          "word": "the",
+          "start": 135.24,
+          "end": 135.576
+        },
+        {
+          "word": "wrong",
+          "start": 135.66,
+          "end": 135.996
+        },
+        {
+          "word": "problem.",
+          "start": 136.08,
+          "end": 136.416
+        }
+      ]
+    },
+    {
+      "start": 136.5,
+      "end": 140.196,
+      "text": "Proximity to the customer beats intelligence in the room.",
+      "words": [
+        {
+          "word": "Proximity",
+          "start": 136.5,
+          "end": 136.836
+        },
+        {
+          "word": "to",
+          "start": 136.92,
+          "end": 137.256
+        },
+        {
+          "word": "the",
+          "start": 137.34,
+          "end": 137.676
+        },
+        {
+          "word": "customer",
+          "start": 137.76,
+          "end": 138.096
+        },
+        {
+          "word": "beats",
+          "start": 138.18,
+          "end": 138.516
+        },
+        {
+          "word": "intelligence",
+          "start": 138.6,
+          "end": 138.936
+        },
+        {
+          "word": "in",
+          "start": 139.02,
+          "end": 139.356
+        },
+        {
+          "word": "the",
+          "start": 139.44,
+          "end": 139.776
+        },
+        {
+          "word": "room.",
+          "start": 139.86,
+          "end": 140.196
+        }
+      ]
+    },
+    {
+      "start": 140.28,
+      "end": 146.076,
+      "text": "The best advice I ever got came from a janitor in our first office.",
+      "words": [
+        {
+          "word": "The",
+          "start": 140.28,
+          "end": 140.616
+        },
+        {
+          "word": "best",
+          "start": 140.7,
+          "end": 141.036
+        },
+        {
+          "word": "advice",
+          "start": 141.12,
+          "end": 141.456
+        },
+        {
+          "word": "I",
+          "start": 141.54,
+          "end": 141.876
+        },
+        {
+          "word": "ever",
+          "start": 141.96,
+          "end": 142.296
+        },
+        {
+          "word": "got",
+          "start": 142.38,
+          "end": 142.716
+        },
+        {
+          "word": "came",
+          "start": 142.8,
+          "end": 143.136
+        },
+        {
+          "word": "from",
+          "start": 143.22,
+          "end": 143.556
+        },
+        {
+          "word": "a",
+          "start": 143.64,
+          "end": 143.976
+        },
+        {
+          "word": "janitor",
+          "start": 144.06,
+          "end": 144.396
+        },
+        {
+          "word": "in",
+          "start": 144.48,
+          "end": 144.816
+        },
+        {
+          "word": "our",
+          "start": 144.9,
+          "end": 145.236
+        },
+        {
+          "word": "first",
+          "start": 145.32,
+          "end": 145.656
+        },
+        {
+          "word": "office.",
+          "start": 145.74,
+          "end": 146.076
+        }
+      ]
+    },
+    {
+      "start": 146.16,
+      "end": 151.956,
+      "text": "He said, you keep moving the furniture around, but the door is still locked.",
+      "words": [
+        {
+          "word": "He",
+          "start": 146.16,
+          "end": 146.496
+        },
+        {
+          "word": "said,",
+          "start": 146.58,
+          "end": 146.916
+        },
+        {
+          "word": "you",
+          "start": 147.0,
+          "end": 147.336
+        },
+        {
+          "word": "keep",
+          "start": 147.42,
+          "end": 147.756
+        },
+        {
+          "word": "moving",
+          "start": 147.84,
+          "end": 148.176
+        },
+        {
+          "word": "the",
+          "start": 148.26,
+          "end": 148.596
+        },
+        {
+          "word": "furniture",
+          "start": 148.68,
+          "end": 149.016
+        },
+        {
+          "word": "around,",
+          "start": 149.1,
+          "end": 149.436
+        },
+        {
+          "word": "but",
+          "start": 149.52,
+          "end": 149.856
+        },
+        {
+          "word": "the",
+          "start": 149.94,
+          "end": 150.276
+        },
+        {
+          "word": "door",
+          "start": 150.36,
+          "end": 150.696
+        },
+        {
+          "word": "is",
+          "start": 150.78,
+          "end": 151.116
+        },
+        {
+          "word": "still",
+          "start": 151.2,
+          "end": 151.536
+        },
+        {
+          "word": "locked.",
+          "start": 151.62,
+          "end": 151.956
+        }
+      ]
+    },
+    {
+      "start": 152.04,
+      "end": 156.156,
+      "text": "It took me two years to understand what he meant.",
+      "words": [
+        {
+          "word": "It",
+          "start": 152.04,
+          "end": 152.376
+        },
+        {
+          "word": "took",
+          "start": 152.46,
+          "end": 152.796
+        },
+        {
+          "word": "me",
+          "start": 152.88,
+          "end": 153.216
+        },
+        {
+          "word": "two",
+          "start": 153.3,
+          "end": 153.636
+        },
+        {
+          "word": "years",
+          "start": 153.72,
+          "end": 154.056
+        },
+        {
+          "word": "to",
+          "start": 154.14,
+          "end": 154.476
+        },
+        {
+          "word": "understand",
+          "start": 154.56,
+          "end": 154.896
+        },
+        {
+          "word": "what",
+          "start": 154.98,
+          "end": 155.316
+        },
+        {
+          "word": "he",
+          "start": 155.4,
+          "end": 155.736
+        },
+        {
+          "word": "meant.",
+          "start": 155.82,
+          "end": 156.156
+        }
+      ]
+    }
+  ],
+  "language": "en",
+  "duration": 156.24
+}

@@ -86,6 +86,8 @@ from clippyme.pipeline.gemini_request import (  # noqa: E402,F401
     generate_with_model_fallback,
     is_rate_limit_error,
 )
+from clippyme.pipeline import viral_ai  # noqa: E402
+from clippyme.domain.job_results import MODEL_ID_RE  # noqa: E402
 
 # YOLO is lazy-loaded on first use. Keeping the model at import time
 # forced every entry-point (including --reframe-only, which never calls
@@ -406,62 +408,112 @@ def transcribe_video(video_path):
                 except OSError:
                     pass
 
-def get_viral_clips(transcript_result, video_duration, instructions=None, min_duration=None):
-    print("🤖  Analyzing with Gemini...")
+def _run_single_stage_viral_clips(transcript_result, video_duration, instructions=None,
+                                  min_duration=None, target_clips=None):
+    provider = (os.getenv("VIRAL_PROVIDER") or "gemini").strip().lower()
+    use_openai = provider == "openai"
+    provider_label = "Command Code" if use_openai else "Gemini"
+    print(f"🤖  Analyzing with {provider_label}...")
     get_viral_clips._last_gemini_exhausted = False
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("❌ Error: GEMINI_API_KEY not found in environment variables.")
-        return None
-
-    client = genai.Client(api_key=api_key)
-    
-    # Use selected model from env, or default to gemini-3.5-flash
-    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
-
-    model_chain = build_model_chain(model_name, os.getenv("GEMINI_FALLBACK_MODELS"))
-    print(f"🤖  Initializing Gemini with model chain: {' → '.join(model_chain)}")
-
-    if any(old in model_name for old in ("1.0", "1.5", "2.0")):
-        print(f"⚠️  WARNING: {model_name} is deprecated. Please switch to gemini-3.5-flash or later via the dashboard.")
 
     # Prompt building (word flattening, untrusted-instructions fencing,
     # template fill) is pure — it lives in gemini_request, host-tested.
     # The live monitor knows whose stream this is; manual jobs don't (unset).
     prompt, words = build_viral_prompt(
         transcript_result, video_duration, instructions, min_duration=min_duration,
-        creator=os.getenv("CLIPPYME_CREATOR_NAME"),
+        creator=os.getenv("CLIPPYME_CREATOR_NAME"), target_clips=target_clips,
     )
 
     if not words:
-        print("⏭️  Empty transcript (no words) — skipping Gemini, no clips.")
+        print(f"⏭️  Empty transcript (no words) — skipping {provider_label}, no clips.")
         return None
 
     max_attempts = int(os.getenv("GEMINI_MAX_RETRIES", "3") or "3")
-    try:
-        response, model_name = generate_with_model_fallback(
-            client, prompt, model_chain, max_attempts=max_attempts)
-    except Exception as e:
-        if is_rate_limit_error(e):
-            get_viral_clips._last_gemini_exhausted = True
-            print("🚫 All Gemini models rate-limited — no clips this run.")
-        print(f"❌ Gemini API failed across model chain: {e}")
-        return None
-
-    # --- Cost Calculation (pure math in gemini_request) ---
     cost_analysis = None
-    try:
-        usage = response.usage_metadata
-        if usage:
-            cost_analysis = compute_gemini_cost(
-                usage.prompt_token_count, usage.candidates_token_count, model_name)
-            print(f"💰 Token Usage ({model_name}):")
-            print(f"   - Input Tokens: {cost_analysis['input_tokens']} (${cost_analysis['input_cost']:.6f})")
-            print(f"   - Output Tokens: {cost_analysis['output_tokens']} (${cost_analysis['output_cost']:.6f})")
-            print(f"   - Total Estimated Cost: ${cost_analysis['total_cost']:.6f}")
-    except Exception as e:
-        print(f"⚠️ Could not calculate cost: {e}")
+    client = None
+    text = ""
+
+    if use_openai:
+        api_key = os.getenv("VIRAL_API_KEY")
+        if not api_key:
+            print("❌ Error: VIRAL_API_KEY not found in environment variables.")
+            return None
+        base_url = os.getenv("VIRAL_BASE_URL") or viral_ai.DEFAULT_BASE_URL
+        model_name = os.getenv("VIRAL_MODEL") or viral_ai.DEFAULT_MODEL
+        model_chain = viral_ai.build_model_chain(
+            model_name, os.getenv("VIRAL_FALLBACK_MODELS"))
+        print(f"🤖  Initializing {provider_label} with model chain: {' → '.join(model_chain)}")
+        try:
+            generated = viral_ai.generate_text(
+                prompt,
+                api_key=api_key,
+                base_url=base_url,
+                models=model_chain,
+                max_attempts=max_attempts,
+            )
+        except Exception as e:
+            if viral_ai.is_rate_limit_error(e):
+                get_viral_clips._last_gemini_exhausted = True
+                print(f"🚫 All {provider_label} models rate-limited — no clips this run.")
+            print(f"❌ {provider_label} API failed across model chain: {e}")
+            return None
+
+        text = generated["text"]
+        model_name = generated["model"]
+        cost_analysis = {
+            "input_tokens": generated["input_tokens"],
+            "output_tokens": generated["output_tokens"],
+            "input_cost": None,
+            "output_cost": None,
+            "total_cost": None,
+            "model": model_name,
+            "provider": "openai",
+            "pricing_known": False,
+            "note": "Pricing not available for this model",
+        }
+        print(f"💰 Token Usage ({model_name}):")
+        print(f"   - Input Tokens: {cost_analysis['input_tokens']}")
+        print(f"   - Output Tokens: {cost_analysis['output_tokens']}")
+        print("   - Pricing: not published for this provider")
+    else:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("❌ Error: GEMINI_API_KEY not found in environment variables.")
+            return None
+
+        client = genai.Client(api_key=api_key)
+        # Use selected model from env, or default to gemini-3.5-flash
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        model_chain = build_model_chain(model_name, os.getenv("GEMINI_FALLBACK_MODELS"))
+        print(f"🤖  Initializing Gemini with model chain: {' → '.join(model_chain)}")
+
+        if any(old in model_name for old in ("1.0", "1.5", "2.0")):
+            print(f"⚠️  WARNING: {model_name} is deprecated. Please switch to gemini-3.5-flash or later via the dashboard.")
+
+        try:
+            response, model_name = generate_with_model_fallback(
+                client, prompt, model_chain, max_attempts=max_attempts)
+        except Exception as e:
+            if is_rate_limit_error(e):
+                get_viral_clips._last_gemini_exhausted = True
+                print("🚫 All Gemini models rate-limited — no clips this run.")
+            print(f"❌ Gemini API failed across model chain: {e}")
+            return None
+
+        # --- Cost Calculation (pure math in gemini_request) ---
+        try:
+            usage = response.usage_metadata
+            if usage:
+                cost_analysis = compute_gemini_cost(
+                    usage.prompt_token_count, usage.candidates_token_count, model_name)
+                print(f"💰 Token Usage ({model_name}):")
+                print(f"   - Input Tokens: {cost_analysis['input_tokens']} (${cost_analysis['input_cost']:.6f})")
+                print(f"   - Output Tokens: {cost_analysis['output_tokens']} (${cost_analysis['output_cost']:.6f})")
+                print(f"   - Total Estimated Cost: ${cost_analysis['total_cost']:.6f}")
+        except Exception as e:
+            print(f"⚠️ Could not calculate cost: {e}")
+
+        text = response.text or ""
 
     # Parse response JSON via the 5-level chain in gemini_parser.
     # See CLAUDE.md section "Gemini viral detection — parsing chain".
@@ -472,10 +524,8 @@ def get_viral_clips(transcript_result, video_duration, instructions=None, min_du
         )
         from pydantic import ValidationError
 
-        text = response.text or ""
-
         def _retry_gemini(err_msg: str) -> str:
-            """Level-4 retry: reformat ONLY, using the cheap flash model.
+            """Level-4 retry: reformat ONLY, using the cheapest capable model.
 
             The reasoning is already done in the primary call — if it
             produced text we just failed to parse, the bottleneck is
@@ -489,8 +539,22 @@ def get_viral_clips(transcript_result, video_duration, instructions=None, min_du
             it to reformat. That avoids paying the input-token cost of
             the transcript twice and keeps the retry latency-bounded.
             """
-            retry_model = os.getenv("GEMINI_RETRY_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
             retry_prompt = build_reformat_prompt(err_msg, text)
+            if use_openai:
+                try:
+                    retried = viral_ai.generate_text(
+                        retry_prompt,
+                        api_key=os.getenv("VIRAL_API_KEY") or "",
+                        base_url=os.getenv("VIRAL_BASE_URL") or viral_ai.DEFAULT_BASE_URL,
+                        models=[model_name],
+                        max_attempts=1,
+                    )
+                    print(f"🔁 Retry via {model_name} (reformatter)")
+                    return retried["text"] or ""
+                except Exception as e:
+                    print(f"⚠️  {provider_label} retry failed: {e}")
+                    return ""
+            retry_model = os.getenv("GEMINI_RETRY_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
             try:
                 retry_chain = build_model_chain(
                     retry_model, os.getenv("GEMINI_FALLBACK_MODELS"))
@@ -579,6 +643,111 @@ def get_viral_clips(transcript_result, video_duration, instructions=None, min_du
         return None
 
 
+def get_viral_clips(transcript_result, video_duration, instructions=None,
+                    min_duration=None, *, target_clips=None, video_title=None,
+                    output_dir=None):
+    """Select viral moments via two-stage CommandCode review or legacy single-stage.
+
+    ``VIRAL_MODE=auto`` (default) uses two-stage when ``VIRAL_PROVIDER=openai``
+    and the legacy path otherwise, so existing Gemini jobs are unchanged.
+    """
+    get_viral_clips._last_gemini_exhausted = False
+    provider = (os.getenv("VIRAL_PROVIDER") or "gemini").strip().lower()
+
+    from clippyme.pipeline.two_stage import resolve_mode
+
+    mode = resolve_mode(provider)
+    if mode == "two_stage":
+        if provider != "openai":
+            print("⚠️  Two-stage selection requires VIRAL_PROVIDER=openai — using single-stage.")
+        else:
+            try:
+                from clippyme.pipeline import two_stage
+
+                print("🔎 Two-stage selection (Command Code): discovery → editorial review → copy")
+                result = two_stage.run_two_stage(
+                    transcript_result,
+                    video_duration,
+                    instructions=instructions,
+                    min_duration=min_duration,
+                    target_clips=target_clips,
+                    video_title=video_title or "",
+                    output_dir=output_dir,
+                )
+            except Exception as exc:  # noqa: BLE001 - fallback policy decides
+                print(f"❌ Two-stage analysis failed: {exc}")
+                result = None
+            if result is not None:
+                if (os.getenv("CLIPPYME_VIRAL_EVAL") or "").strip().lower() in (
+                    "1", "true", "yes", "on",
+                ):
+                    try:
+                        from clippyme.pipeline import two_stage_ops
+
+                        print("🧪 Viral evaluation mode: running the legacy single-stage path too")
+                        legacy_result = _run_single_stage_viral_clips(
+                            transcript_result, video_duration, instructions, min_duration,
+                            target_clips,
+                        )
+                        comparison = two_stage_ops.compare_with_legacy(
+                            (legacy_result or {}).get("shorts") or [],
+                            result.get("shorts") or [],
+                            (
+                                (result.get("two_stage") or {})
+                                .get("discovery", {})
+                                .get("consolidation", {})
+                                .get("final", 0)
+                            ),
+                        )
+                        comparison["legacy_model"] = (
+                            (legacy_result or {}).get("cost_analysis") or {}
+                        ).get("model")
+                        comparison["legacy_cost_analysis"] = (
+                            (legacy_result or {}).get("cost_analysis")
+                        )
+                        comparison["two_stage_models"] = (
+                            (result.get("two_stage") or {}).get("models") or {}
+                        )
+                        comparison["two_stage_models_used"] = (
+                            (result.get("two_stage") or {}).get("models_used") or {}
+                        )
+                        comparison["two_stage_usage"] = (
+                            (result.get("two_stage") or {}).get("usage") or {}
+                        )
+                        comparison["two_stage_totals"] = (
+                            (result.get("two_stage") or {}).get("totals") or {}
+                        )
+                        result["viral_eval"] = comparison
+                        print(two_stage_ops.format_eval_report(comparison))
+                        if output_dir:
+                            target = os.path.join(output_dir, "viral_eval_report.json")
+                            tmp = target + ".tmp"
+                            with open(tmp, "w", encoding="utf-8") as handle:
+                                json.dump(comparison, handle, ensure_ascii=False, indent=2)
+                            os.replace(tmp, target)
+                    except Exception as exc:  # noqa: BLE001 - evaluation is diagnostic
+                        print(f"⚠️  Viral evaluation comparison failed: {exc}")
+                return result
+
+            fallback = (os.getenv("VIRAL_TWO_STAGE_FALLBACK") or "single").strip().lower()
+            if fallback == "off":
+                print("🚫 Two-stage failed and VIRAL_TWO_STAGE_FALLBACK=off — no clips this run.")
+                return None
+            print("↩️  Falling back to legacy single-stage selection")
+            fallback_result = _run_single_stage_viral_clips(
+                transcript_result, video_duration, instructions, min_duration,
+                target_clips,
+            )
+            if isinstance(fallback_result, dict):
+                fallback_result["viral_fallback"] = "single_stage_after_two_stage_failure"
+            return fallback_result
+
+    return _run_single_stage_viral_clips(
+        transcript_result, video_duration, instructions, min_duration,
+        target_clips,
+    )
+
+
 def build_texttiling_fallback(transcript_result, video_title):
     """No-AI fallback: topic-segment the transcript into clips via lexical TextTiling.
 
@@ -651,10 +820,18 @@ if __name__ == '__main__':
     parser.add_argument('--monitor', action='store_true',
                         help='Live-monitor job: never use TextTiling/whole-video '
                              'fallbacks; empty transcript or Gemini exhaustion → zero clips.')
+    parser.add_argument('--target-clips', type=int, default=None,
+                        help="Target number of clips the editor asked for. Passed "
+                             "into the selection prompt (legacy) and used as the "
+                             "review ceiling (two-stage).")
+    parser.add_argument('--min-duration', type=float, default=None,
+                        help="Hard minimum clip duration in seconds.")
     parser.add_argument('--model', type=str, default=None,
-                        help="Override the Gemini model for viral detection on THIS job (e.g. "
-                             "'gemini-2.5-pro', 'gemini-3.1-pro-preview'). When unset, the pipeline uses "
-                             "GEMINI_MODEL from env / Settings (default gemini-3.5-flash).")
+                        help="Override the viral-detection model for THIS job. Gemini ids "
+                             "(e.g. 'gemini-3.1-pro-preview') or any provider model id from "
+                             "the configured OpenAI-compatible catalog (e.g. 'gpt-6-sol', "
+                             "'claude-sonnet-5', 'deepseek/deepseek-v4-flash'). When unset, "
+                             "the provider's Settings model is used.")
 
     args = parser.parse_args()
 
@@ -673,18 +850,22 @@ if __name__ == '__main__':
         print(f"❌ Invalid --letterbox-zoom: {args.letterbox_zoom!r}")
         sys.exit(2)
 
-    # Per-job Gemini model override — set the env BEFORE get_viral_clips, which
-    # reads GEMINI_MODEL at call time (main.py get_viral_clips). Lets the user
-    # pick a different model per run without changing the global Settings value.
+    # Per-job model override — set the env BEFORE get_viral_clips, which reads
+    # it at call time. Gemini and Command Code share the flag; the active
+    # provider decides which variable the value belongs in.
     if args.model:
         # Validate here too, not just at the API→subprocess boundary: a direct
         # CLI invocation (`--model '$(evil)'`) would otherwise set an arbitrary
-        # value in the child env. Mirrors GEMINI_MODEL_RE in job_results.
-        if not re.match(r"^gemini-[A-Za-z0-9.\-]{1,64}$", args.model):
+        # value in the child env. Mirrors MODEL_ID_RE in job_results.
+        if not MODEL_ID_RE.match(args.model):
             print(f"❌ invalid --model: {args.model!r}")
             sys.exit(2)
-        os.environ["GEMINI_MODEL"] = args.model
-        print(f"🤖  Gemini model override: {args.model}")
+        if (os.getenv("VIRAL_PROVIDER") or "gemini").strip().lower() == "openai":
+            os.environ["VIRAL_MODEL"] = args.model
+            print(f"🤖  Command Code model override: {args.model}")
+        else:
+            os.environ["GEMINI_MODEL"] = args.model
+            print(f"🤖  Gemini model override: {args.model}")
 
     # Per-job language override — propagate to the env BEFORE any transcription
     # call so deepgram_transcribe.transcribe_with_deepgram reads the user's
@@ -806,8 +987,12 @@ if __name__ == '__main__':
             print(f"   ⚠️ Could not read duration (fps={fps}, frames={frame_count}); defaulting to 0.")
             duration = 0.0
 
-        # 4. Gemini Analysis
-        clips_data = get_viral_clips(transcript, duration, instructions=args.instructions)
+        # 4. Viral moment analysis (two-stage CommandCode review or legacy)
+        clips_data = get_viral_clips(
+            transcript, duration, instructions=args.instructions,
+            min_duration=args.min_duration, target_clips=args.target_clips,
+            video_title=video_title, output_dir=output_dir,
+        )
 
         # Smarter no-AI fallback: when Gemini is unavailable (no key) or its
         # output is unusable, segment the transcript into topic-coherent clips
@@ -817,11 +1002,30 @@ if __name__ == '__main__':
         # cover). If TextTiling can't find usable segments we fall through to the
         # original whole-video render. (Ported from ClipsAI — see
         # docs/clipsai-analysis.md.)
-        if not clips_data or 'shorts' not in clips_data:
+        reviewed_empty = bool(clips_data and clips_data.get('reviewed_empty'))
+        if not reviewed_empty and (not clips_data or 'shorts' not in clips_data):
             if should_use_fallback(args.monitor):
                 clips_data = build_texttiling_fallback(transcript, video_title)
 
-        if not clips_data or not clips_data.get('shorts'):
+        if reviewed_empty:
+            # The editorial stage deliberately rejected every candidate. Do
+            # not substitute TextTiling / whole-video filler for a reviewed
+            # decision: fewer (or zero) clips is the correct result.
+            empty = {
+                'shorts': [], 'transcript': transcript, 'aspect': args.aspect,
+                'reviewed_empty': True,
+            }
+            if clips_data.get('two_stage'):
+                empty['two_stage'] = clips_data['two_stage']
+            if clips_data.get('cost_analysis'):
+                empty['cost_analysis'] = clips_data['cost_analysis']
+            _meta = os.path.join(output_dir, f"{video_title}_metadata.json")
+            _tmp = _meta + '.tmp'
+            with open(_tmp, 'w') as f:
+                json.dump(empty, f, indent=2)
+            os.replace(_tmp, _meta)
+            print("🚫 Editorial review selected no clips — nothing to render.")
+        elif not clips_data or not clips_data.get('shorts'):
             if not should_use_fallback(args.monitor):
                 # Monitor: no hallucinated/fallback clips — write empty metadata
                 # (+ exhaustion marker if Gemini ran out of models) and exit clean.

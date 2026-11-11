@@ -22,7 +22,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from clippyme.domain.job_results import MODEL_ID_RE
 from clippyme.domain.runtime_state import RuntimeState
+from clippyme.pipeline import viral_ai
 from clippyme.pipeline.media_qa import inspect_clip, probe_media
 from clippyme.pipeline.preflight import (
     PreflightInputs,
@@ -155,6 +157,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--letterbox-zoom", type=float, default=0.0)
     parser.add_argument("--language", type=str, default=None)
     parser.add_argument("--min-duration", type=float, default=None)
+    parser.add_argument("--target-clips", type=int, default=None)
     parser.add_argument("--aspect", choices=["9:16", "1:1", "16:9"], default="9:16")
     parser.add_argument("--monitor", action="store_true")
     parser.add_argument("--model", type=str, default=None)
@@ -163,10 +166,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _configure_overrides(args: argparse.Namespace) -> None:
     if args.model:
-        if not re.match(r"^gemini-[A-Za-z0-9.\-]{1,64}$", args.model):
+        if not MODEL_ID_RE.match(args.model):
             raise ValueError(f"invalid --model: {args.model!r}")
-        os.environ["GEMINI_MODEL"] = args.model
-        print(f"🤖 Gemini model override: {args.model}", flush=True)
+        if (os.getenv("VIRAL_PROVIDER") or "gemini").strip().lower() == "openai":
+            os.environ["VIRAL_MODEL"] = args.model
+            print(f"🤖 Command Code model override: {args.model}", flush=True)
+        else:
+            os.environ["GEMINI_MODEL"] = args.model
+            print(f"🤖 Gemini model override: {args.model}", flush=True)
     if args.language:
         if not re.match(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{2,8})?$", args.language):
             raise ValueError(f"invalid --language: {args.language!r}")
@@ -240,7 +247,10 @@ def _run_preflight(args, input_video: str, output_dir: str, state: RuntimeState,
         free_disk = shutil.disk_usage(output_dir).free
     except OSError:
         free_disk = None
-    model = args.model or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    if (os.getenv("VIRAL_PROVIDER") or "gemini").strip().lower() == "openai":
+        model = args.model or os.getenv("VIRAL_MODEL") or viral_ai.DEFAULT_MODEL
+    else:
+        model = args.model or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     report = build_preflight(
         PreflightInputs(
             duration_seconds=duration,
@@ -344,11 +354,15 @@ def _load_or_analyze(
             duration,
             instructions=args.instructions,
             min_duration=args.min_duration,
+            target_clips=args.target_clips,
+            video_title=video_title,
+            output_dir=output_dir,
         )
-        if not clips_data or "shorts" not in clips_data:
+        reviewed_empty = bool(clips_data and clips_data.get("reviewed_empty"))
+        if not reviewed_empty and (not clips_data or "shorts" not in clips_data):
             if should_use_fallback(args.monitor):
                 clips_data = legacy.build_texttiling_fallback(transcript, video_title)
-        if not clips_data or not clips_data.get("shorts"):
+        if not reviewed_empty and (not clips_data or not clips_data.get("shorts")):
             if not should_use_fallback(args.monitor):
                 clips_data = {
                     "shorts": [],
@@ -359,6 +373,12 @@ def _load_or_analyze(
             else:
                 print("⚠️ No valid AI/topic clips; using whole-video fallback", flush=True)
                 clips_data = _whole_video_fallback(video_title, duration)
+        elif reviewed_empty:
+            print(
+                "🚫 Editorial review selected no clips — keeping zero clips "
+                "instead of a fallback render.",
+                flush=True,
+            )
 
     clips_data["transcript"] = transcript
     clips_data["aspect"] = args.aspect

@@ -161,7 +161,8 @@ every consumer resolves through `clip_resolve.clip_filename_for`
 (clip_filename → video_url → positional legacy fallback).
 
 **Transcription**: `TRANSCRIPTION_PROVIDER` = `deepgram` (default, Nova-3
-REST) | `elevenlabs` (Scribe; audio-event tags feed the Gemini prompt) |
+REST) | `elevenlabs` (Scribe; audio-event tags feed both the single-stage and
+two-stage selection prompts) |
 `whisper` (local). Both cloud providers silently fall back to Faster-Whisper
 on any failure. All paths transcribe an extracted mono-16kHz FLAC, not the
 video. Transcripts are cached 7 days under `data/cache/` keyed by URL hash.
@@ -276,9 +277,22 @@ default profile.
 
 API keys, Gemini model, transcription provider and cookies are managed from
 the dashboard Settings tab (persisted in `data/config.json`, git-ignored).
-The full operational env-var reference (REFRAME_*, AE_*, CLIPPYME_*,
-DEEPGRAM_*, ELEVENLABS_*, ZERNIO_*, server knobs) lives in `.env.example`
-(commented, with defaults) and the README table — keep those two in sync when
+Viral detection can run on Gemini (`VIRAL_PROVIDER=gemini`, default) or on any
+OpenAI/Anthropic-compatible catalog via `VIRAL_PROVIDER=openai` +
+`VIRAL_BASE_URL`/`VIRAL_API_KEY`/`VIRAL_MODEL` (Command Code by default:
+Claude ids route to `/messages`, everything else to `/chat/completions`; see
+`pipeline/viral_ai.py`). With CommandCode, `VIRAL_MODE=auto` runs two-stage
+selection (`pipeline/two_stage.py` + pure `pipeline/two_stage_ops.py`): GLM-5.3
+Flash proposes recall-oriented candidates, Claude Opus 5.5 independently scores
+and ranks them (10-dimension rubric, quality floor, bounded pairwise), then
+boundaries are word-anchored/deduped and promotional copy is generated only for
+survivors. Stage artifacts + `two_stage_report.json` live in the job dir (JSON
+blocked from `/videos`; inspect via `GET /api/analysis/{job_id}` or
+`scripts/viral_eval.py`). Reject-all is a valid result; legacy single-stage stays
+available and is the fallback when a stage fails. The full operational env-var
+reference (REFRAME_*, AE_*, CLIPPYME_*, DEEPGRAM_*, ELEVENLABS_*, ZERNIO_*,
+VIRAL_*, server knobs) lives in `.env.example` (commented, with defaults) and
+the README table — keep those two in sync when
 adding a knob. `GEMINI_MODEL` defaults to `gemini-3.5-flash`; per-job override
 via `--model` / `ProcessRequest.model` (regex-validated against argv
 injection).
@@ -294,6 +308,9 @@ injection).
   measured A/B numbers.
 - `docs/runtime-quality.md` — the durable job lifecycle, retry/preflight/QA
   env knobs and the regression quality-suite manifest format.
+- `docs/two-stage-viral-selection.md` — two-stage CommandCode discovery →
+  Opus review architecture, configuration, artifacts, measured comparison and
+  the plan/pricing limitations.
 - `docs/title-hook-copy-research.md` — why the Gemini prompt writes
   engagement-first titles the way it does (platform clickbait/engagement-bait
   policy boundary, comment-driver research, Italian register), and why the
