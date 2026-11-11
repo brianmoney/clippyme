@@ -183,6 +183,20 @@ test('rewrite AI failure shows the error and keeps the textarea', async () => {
   expect(onApply.mock.calls[0][0].hookParams.text).toBe('THIS changed everything');
 });
 
+test('animated hook from the Create recipe survives the modal apply', () => {
+  // The modal's style vocabulary must include every key the Create drawer can
+  // set. Dropping `animate` here reverted the recipe's animated entrance on
+  // the very first clip edit, before "apply to all" could copy it anywhere.
+  const { onApply } = mount({
+    preselections: { hook: { position: 'top', size: 'M', animate: true } },
+  });
+  fireEvent.click(tab('Hook'));
+  fireEvent.click(applyBtn());
+  const p = onApply.mock.calls[0][0];
+  expect(p.toggles.hook).toBe(true);
+  expect(p.hookParams.animate).toBe(true);
+});
+
 // --- hook text cache vs fresh clip data ------------------------------------
 
 test('an UNTOUCHED cached hook text is ignored in favor of the clip\'s current viral_hook_text', () => {

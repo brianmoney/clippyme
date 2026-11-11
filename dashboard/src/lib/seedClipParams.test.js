@@ -96,6 +96,16 @@ test('seedHookParams prefers viral_hook_text and carries style keys', () => {
   assert.equal(out.offset_y, 0);
 });
 
+test('seedHookParams carries the animated-entrance choice to compose', () => {
+  // `animate` lives in the Create hook drawer like every other style key; it
+  // used to be omitted here, so ticking "Animated entrance" on the home page
+  // produced static hooks on every clip.
+  const out = seedHookParams({ viral_hook_text: 'WATCH THIS' }, { hook: { animate: true } });
+  assert.equal(out.animate, true);
+  assert.equal(seedHookParams({}, { hook: { animate: false } }).animate, false);
+  assert.equal('animate' in seedHookParams({}, { hook: {} }), false);
+});
+
 test('seedHookParams omits style keys the user never set', () => {
   const out = seedHookParams({}, { hook: {} });
   for (const k of ['bg_enabled', 'bg_color', 'text_color', 'outline_width', 'font']) {

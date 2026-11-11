@@ -1,9 +1,10 @@
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon, Btn, Badge } from './primitives';
 import { LazyVideo } from './LazyVideo';
 import { AiCaptionPanel } from './aiCaptions';
-import { clipPreviewSrc, fmtDuration, downloadClip, exportClip, getClipTranscript } from './realApi';
+import { clipPreviewSrc, fmtDuration, downloadClip, exportClip, getClipTranscript, composeClip } from './realApi';
+import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedGradeParams, seedBannerParams, seedTopTextParams } from '../lib/seedClipParams';
 
 const REFRAME_ICON = { auto: 'crop', subject: 'scan-face', object: 'scan-face', disabled: 'square' };
 const REFRAME_LABEL = { auto: 'Auto', subject: 'Subject', object: 'Subject', disabled: 'Off' };
@@ -208,8 +209,72 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
   );
 });
 
-export function ResultsView({ clips, jobId, preselections, clipStates = {}, onUpdateClipState,
-  doneIn, onBack, onPublish, onPublishAll, onEdit, onApplyToAll, onEditSelected, embedded, pushToast }) {
+function TwoStageAnalysis({ report }) {
+  if (!report) return null;
+  const models = report.models || {};
+  const discovery = report.discovery || {};
+  const consolidation = discovery.consolidation || {};
+  const review = report.review || {};
+  const totals = report.totals || {};
+  const used = report.models_used || {};
+  const selected = report.selections || [];
+  const rejected = report.rejected || [];
+  return (
+    <details className="two-stage-analysis" style={{
+      margin: '10px 0 18px', padding: '12px 14px', border: '1px solid var(--line-1)',
+      borderRadius: 'var(--r-md)', background: 'var(--bg-2)', fontSize: 13, color: 'var(--fg-2)',
+    }}>
+      <summary style={{ cursor: 'pointer', color: 'var(--fg-1)' }}>
+        {report.reviewed_empty
+          ? 'Two-stage review: no clips qualified'
+          : `Two-stage selection · ${selected.length} kept from ${consolidation.final ?? review.evaluated ?? 0} candidates`}
+      </summary>
+      <div style={{ marginTop: 10, lineHeight: 1.6 }}>
+        <div><strong>Discovery:</strong> {models.discovery || '—'} · {consolidation.input ?? 0} proposed → {consolidation.final ?? 0} reviewed ({consolidation.duplicates_removed ?? 0} duplicates removed)</div>
+        {used.discovery?.length && used.discovery[0] !== models.discovery && (
+          <div style={{ color: 'var(--warn, #f5a623)' }}>
+            Discovery used <strong>{used.discovery.join(', ')}</strong> instead of {models.discovery}.
+          </div>
+        )}
+        <div><strong>Review:</strong> {models.review || '—'} · {review.evaluated ?? 0} evaluated · {review.selected ?? 0} kept · {review.rejected ?? 0} rejected</div>
+        {used.review?.length && used.review[0] !== models.review && (
+          <div style={{ color: 'var(--warn, #f5a623)' }}>
+            Review fell back to <strong>{used.review.join(', ')}</strong> because {models.review} was unavailable on this plan.
+          </div>
+        )}
+        {models.copy && <div><strong>Copy:</strong> {models.copy}{report.copy?.fallback ? ' (grounded fallback)' : ''}</div>}
+        {totals.input_tokens != null && (
+          <div><strong>Usage:</strong> {totals.input_tokens} in / {totals.output_tokens} out tokens · {totals.latency_s ?? 0}s · cost {totals.pricing_known ? `$${totals.cost_usd}` : 'unknown (pricing not published)'}</div>
+        )}
+        {!!selected.length && (
+          <ol style={{ margin: '8px 0 0 18px' }}>
+            {selected.map((item) => (
+              <li key={item.candidate_id} style={{ marginBottom: 4 }}>
+                <strong>#{item.rank} · {Number(item.quality_score).toFixed(1)}/10</strong>{' '}
+                [{Number(item.start).toFixed(1)}–{Number(item.end).toFixed(1)}s] · {item.category}
+                <div style={{ color: 'var(--fg-3)' }}>{item.reason}</div>
+              </li>
+            ))}
+          </ol>
+        )}
+        {!selected.length && rejected.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <strong>Rejected:</strong>{' '}
+            {Object.entries(rejected.reduce((acc, item) => {
+              const reason = item.reason || 'rejected';
+              acc[reason] = (acc[reason] || 0) + 1;
+              return acc;
+            }, {})).map(([reason, count]) => `${count}× ${reason}`).join(' · ')}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+export function ResultsView({ clips, jobId, preselections, sourceBanner, clipStates = {}, onUpdateClipState,
+  doneIn, onBack, onPublish, onPublishAll, onEdit, onApplyToAll, onEditSelected, embedded, pushToast,
+  analysis }) {
   const [selectMode, setSelectMode] = useState(false);
   const [aiCaptionsOpen, setAiCaptionsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -217,6 +282,78 @@ export function ResultsView({ clips, jobId, preselections, clipStates = {}, onUp
   const selected = useMemo(() => visible.filter(({ i }) => clipStates[i]?.selected !== false), [visible, clipStates]);
   const topScore = useMemo(() => visible.length ? Math.max(...visible.map(({ c }) => Math.round(c.viral_score || 0))) : 0, [visible]);
   const allSelected = visible.length > 0 && selected.length === visible.length;
+
+  // The Create-tab recipe is a compose-time default. Pre-compose each clip once
+  // so the results preview actually reflects the chosen subtitles/hook/logo etc.
+  // The raw clip stays on disk; export/publish still compose from the same
+  // params, and a per-clip state means this never runs twice for the same job.
+  const composingRef = useRef(new Set());
+  const attemptedRef = useRef(new Set());
+  const [composeTick, setComposeTick] = useState(0);
+  useEffect(() => {
+    composingRef.current = new Set();
+    attemptedRef.current = new Set();
+  }, [jobId]);
+  useEffect(() => {
+    if (!jobId || !preselections) return;
+    const toggles = seedToggles(preselections);
+    if (!Object.values(toggles).some(Boolean)) return;
+    for (const { c: clip, i } of visible) {
+      const state = clipStates[i] || {};
+      if (state.toggles) continue;
+      const key = `${jobId}:${i}`;
+      if (attemptedRef.current.has(key) || composingRef.current.has(key)) continue;
+      // Two at a time: a 20-clip job must not launch 20 ffmpeg composes at
+      // once. State updates below re-run this effect and pick up the rest.
+      if (composingRef.current.size >= 2) break;
+      attemptedRef.current.add(key);
+      composingRef.current.add(key);
+      const apiIndex = clip.original_index ?? i;
+      const hookParams = toggles.hook ? seedHookParams(clip, preselections) : {};
+      const subtitleParams = toggles.subtitles ? seedSubtitleParams(preselections) : {};
+      const logoParams = toggles.logo ? seedLogoParams(preselections) : {};
+      const gradeParams = toggles.grade ? seedGradeParams(preselections) : {};
+      const bannerParams = toggles.banner ? seedBannerParams(preselections, sourceBanner) : {};
+      const topTextParams = toggles.toptext ? seedTopTextParams(preselections) : {};
+      const dropRanges = toggles.smartcut ? (state.dropRanges || []) : [];
+      const apiParams = {
+        toggles,
+        hook_params: hookParams,
+        subtitle_params: subtitleParams,
+        logo_params: logoParams,
+        grade_params: gradeParams,
+        banner_params: bannerParams,
+        top_text_params: topTextParams,
+        drop_ranges: dropRanges,
+      };
+      const clipState = {
+        toggles, hookParams, subtitleParams, logoParams, gradeParams,
+        bannerParams, topTextParams, dropRanges,
+      };
+      onUpdateClipState(i, { processing: true });
+      composeClip(jobId, apiIndex, apiParams)
+        .then(({ composed_url }) => onUpdateClipState(i, {
+          ...clipState, processing: false, composeError: false,
+          previewUrl: composed_url, previewBust: Date.now(),
+        }))
+        .catch((err) => {
+          // Do NOT persist the recipe as if it had been applied: keeping the
+          // toggles here made every earlier failure permanent (the effect sees
+          // `state.toggles` and never retries, even after a reload), so the
+          // clips stayed raw and the operator had to edit one by hand and copy
+          // it to the rest. Leaving the state recipe-free lets the next mount
+          // retry, while export/publish still seed the same params.
+          onUpdateClipState(i, { processing: false, composeError: true });
+          pushToast?.('warn', `Clip ${i + 1}: could not apply the recipe — ${
+            String(err?.message || err).slice(0, 90)
+          }`);
+        })
+        .finally(() => {
+          composingRef.current.delete(key);
+          setComposeTick((value) => value + 1);
+        });
+    }
+  }, [jobId, preselections, sourceBanner, visible, clipStates, onUpdateClipState, pushToast, composeTick]);
 
   const setSelectedAll = useCallback((value) => visible.forEach(({ i }) => onUpdateClipState(i, { selected: value })), [visible, onUpdateClipState]);
   const publishMany = useCallback((list) => onPublishAll(list.map(({ c, i }) => ({ ...c, _idx: i, _apiIdx: c.original_index ?? i }))), [onPublishAll]);
@@ -256,6 +393,7 @@ export function ResultsView({ clips, jobId, preselections, clipStates = {}, onUp
         </div>
       </div>
       <div className="results-sub">Sorted by virality score · top moment {topScore}</div>
+      <TwoStageAnalysis report={analysis} />
 
       {aiCaptionsOpen && !selectMode && (
         <AiCaptionPanel jobId={jobId} clips={clips} clipStates={clipStates}

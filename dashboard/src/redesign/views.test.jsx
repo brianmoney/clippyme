@@ -15,6 +15,10 @@ vi.mock('./realApi', () => ({
   getConfig: (...a) => getConfig(...a),
   saveConfig: (...a) => saveConfig(...a),
   getModels: vi.fn(async () => ({ models: [] })),
+  getViralModels: vi.fn(async () => ({
+    provider: 'openai',
+    models: [{ name: 'z-ai/glm-5.3-flash' }, { name: 'claude-sonnet-5-5' }],
+  })),
   cookiesStatus: vi.fn(async () => ({ configured: false })),
   uploadCookies: vi.fn(),
   deleteCookies: vi.fn(),
@@ -212,4 +216,24 @@ test('history row shows the video title and a published-count badge when clips w
   expect(screen.getByText('1 published')).toBeInTheDocument();
   expect(screen.getByText('other video')).toBeInTheDocument();
   expect(screen.queryByText('0 published')).toBeNull();
+});
+
+
+test('two-stage panel appears for Command Code and saves limits', async () => {
+  getConfig.mockResolvedValue({
+    ...EMPTY_CONFIG,
+    VIRAL_PROVIDER: 'openai',
+    VIRAL_API_KEY: 'cmd...1234',
+    VIRAL_BASE_URL: 'https://api.commandcode.ai/provider/v1',
+    VIRAL_DISCOVERY_MODEL: 'z-ai/glm-5.3-flash',
+    VIRAL_REVIEW_MODEL: 'claude-opus-5-5',
+    VIRAL_MODE: 'auto',
+  });
+  mount();
+  await waitFor(() => expect(screen.getByText('Two-stage selection')).toBeInTheDocument());
+  expect(screen.getByLabelText('Discovery model')).toBeInTheDocument();
+  expect(screen.getByLabelText('Review model')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Maximum discovery candidates'), { target: { value: '40' } });
+  fireEvent.blur(screen.getByLabelText('Maximum discovery candidates'));
+  await waitFor(() => expect(saveConfig).toHaveBeenCalledWith({ VIRAL_MAX_CANDIDATES: '40' }));
 });

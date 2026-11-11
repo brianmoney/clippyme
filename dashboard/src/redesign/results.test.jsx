@@ -7,6 +7,7 @@ const clip = {
   start: 10,
   end: 20,
   viral_score: 92,
+  viral_hook_text: 'She got voted out mid-sentence',
   video_title_for_youtube_short: 'Test Clip',
   original_index: 0,
 };
@@ -139,4 +140,135 @@ test('AI captions button expands the context panel above the grid', async () => 
   expect(await screen.findByLabelText('AI caption context')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'AI captions' }));
   expect(screen.queryByLabelText('AI caption context')).toBeNull();
+});
+
+
+test('auto-composes once with the Create recipe so previews reflect subtitles/hook', async () => {
+  const compose = vi.spyOn(realApi, 'composeClip').mockResolvedValue({
+    composed_url: '/videos/job-1/composed_clip.mp4',
+  });
+  const update = vi.fn();
+  render(
+    <ResultsView
+      clips={[clip]}
+      jobId="job-1"
+      preselections={{
+        subtitles: {
+          mode: 'karaoke', preset: 'hormozi_bold', align: 'center', offset_y: 12,
+          font_color: '#FDE700', outline_color: '#111111',
+        },
+        hook: { position: 'top', size: 'M', animate: true, text_color: '#FF0000' },
+        smartcut: false,
+      }}
+      clipStates={{}}
+      onUpdateClipState={update}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  await waitFor(() => expect(compose).toHaveBeenCalled());
+  const [jobId, index, params] = compose.mock.calls[0];
+  expect(jobId).toBe('job-1');
+  expect(index).toBe(0);
+  expect(params.toggles.subtitles).toBe(true);
+  expect(params.toggles.hook).toBe(true);
+  expect(params.toggles.smartcut).toBe(false);
+  // The whole recipe must reach compose — not just the toggle. These were the
+  // options that used to be silently dropped on every generated clip.
+  expect(params.subtitle_params).toMatchObject({
+    mode: 'karaoke', preset: 'hormozi_bold', align: 'center', offset_y: 12,
+    font_color: '#FDE700', outline_color: '#111111',
+  });
+  expect(params.hook_params).toMatchObject({
+    position: 'top', size: 'M', animate: true, text_color: '#FF0000',
+    text: 'She got voted out mid-sentence',
+  });
+  await waitFor(() => expect(update).toHaveBeenCalledWith(
+    0,
+    expect.objectContaining({ previewUrl: '/videos/job-1/composed_clip.mp4', processing: false }),
+  ));
+  const finalState = update.mock.calls.at(-1)[1];
+  expect(finalState.hookParams).toBeTruthy();
+  expect(finalState.subtitleParams).toBeTruthy();
+  expect(finalState.hook_params).toBeUndefined();
+});
+
+test('a failed recipe compose stays retryable (does not mark the recipe applied)', async () => {
+  // Persisting toggles on failure made every later mount skip the recipe, so
+  // one transient compose error left all clips raw forever. Keep the state
+  // recipe-free and surface the failure instead.
+  vi.spyOn(realApi, 'composeClip').mockRejectedValue(new Error('ffmpeg busy'));
+  const update = vi.fn();
+  const pushToast = vi.fn();
+  render(
+    <ResultsView
+      clips={[clip]}
+      jobId="job-1"
+      preselections={{ subtitles: { mode: 'karaoke', preset: 'hormozi_bold' } }}
+      clipStates={{}}
+      onUpdateClipState={update}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+      pushToast={pushToast}
+    />,
+  );
+  await waitFor(() => expect(pushToast).toHaveBeenCalledWith('warn', expect.stringContaining('Clip 1')));
+  const failed = update.mock.calls.at(-1)[1];
+  expect(failed).toMatchObject({ processing: false, composeError: true });
+  expect(failed.toggles).toBeUndefined();
+  expect(failed.subtitleParams).toBeUndefined();
+});
+
+test('real Create opts → preselections → clip compose keeps every subtitle/hook option', async () => {
+  // End-to-end seam: the home-page drawer state is mapped by
+  // optsToPreselections, then seeded per clip by seedClipParams. Pin the
+  // fields the user expects to see on the generated clips so a new control
+  // cannot be added to Create and silently dropped on the way to compose.
+  const compose = vi.spyOn(realApi, 'composeClip').mockResolvedValue({
+    composed_url: '/videos/job-1/composed.mp4',
+  });
+  const preselections = realApi.optsToPreselections({
+    reframeMode: 'auto', subtitles: true, subMode: 'classic', subPreset: 'classic_white',
+    subFont: 'Anton-Regular', subColor: '#FDE700', subOutlineW: 4, subBg: true,
+    subPosition: 'top', subAlign: 'center', subOffsetY: 8,
+    hooks: true, hookPos: 'bottom', hookSize: 'L',
+    hookStyle: { animate: true, text_color: '#00FF66', outline_width: 8 },
+    smartcut: true,
+  });
+  render(
+    <ResultsView
+      clips={[clip]}
+      jobId="job-1"
+      preselections={preselections}
+      clipStates={{}}
+      onUpdateClipState={vi.fn()}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  await waitFor(() => expect(compose).toHaveBeenCalled());
+  const [, , params] = compose.mock.calls[0];
+  expect(params.toggles).toMatchObject({ subtitles: true, hook: true, smartcut: true });
+  expect(params.subtitle_params).toMatchObject({
+    mode: 'classic', preset: 'classic_white', font: 'Anton-Regular',
+    font_color: '#FDE700', border_width: 4, bg_opacity: 0.6,
+    position: 'top', align: 'center', offset_y: 8,
+  });
+  expect(params.hook_params).toMatchObject({
+    position: 'bottom', size: 'L', animate: true,
+    text_color: '#00FF66', outline_width: 8,
+    text: 'She got voted out mid-sentence',
+  });
 });

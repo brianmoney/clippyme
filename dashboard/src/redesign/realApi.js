@@ -143,6 +143,16 @@ export async function exportClip(jobId, index, clip, state, preselections) {
   const toggles = state?.toggles ?? seedToggles(preselections);
   const any = Object.values(toggles || {}).some(Boolean);
   if (!any) { downloadClip(clip, index); return 'raw'; }
+  // The results view pre-composes with these params after processing; reuse
+  // that file instead of paying for a second identical compose.
+  if (state?.previewUrl && !state?.processing) {
+    const a = document.createElement('a');
+    a.href = safeResolveUrl(state.previewUrl);
+    a.download = clipDownloadName(clip, index);
+    a.style.display = 'none';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    return 'composed';
+  }
   const hook = state?.hookParams ?? seedHookParams(clip, preselections);
   const subs = state?.subtitleParams ?? seedSubtitleParams(preselections);
   const logo = state?.logoParams ?? seedLogoParams(preselections);
@@ -288,6 +298,19 @@ export async function saveConfig(keys) {
 export async function getModels(apiKey) {
   const res = await apiFetch(getApiUrl('/api/config/models'), { headers: { 'X-Gemini-Key': apiKey } });
   if (!res.ok) return { models: [] };
+  return res.json();
+}
+
+// Model catalog for whichever viral-moment provider is configured. With no
+// overrides the backend reads saved Settings; Settings passes the unsaved
+// key/URL so a selection can be validated before persisting it.
+export async function getViralModels({ provider, apiKey, baseUrl } = {}) {
+  const query = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+  const headers = {};
+  if (apiKey) headers['X-Viral-Key'] = apiKey;
+  if (baseUrl) headers['X-Viral-Base-Url'] = baseUrl;
+  const res = await apiFetch(getApiUrl(`/api/config/viral-models${query}`), { headers });
+  if (!res.ok) return { provider, models: [], error: `HTTP ${res.status}` };
   return res.json();
 }
 
@@ -461,6 +484,9 @@ export function optsToPreselections(opts) {
     skip_analysis: !opts.detect,
     // Hard per-clip min-length floor (0 = off → default 15-60s window).
     min_duration: opts.minDuration ? Number(opts.minDuration) : undefined,
+    // Editor's requested clip count. Absent in Auto mode; the backend passes
+    // it into the selection prompt / two-stage review ceiling.
+    target_clips: !opts.clipsAuto && Number(opts.clips) > 0 ? Number(opts.clips) : undefined,
     smartcut: opts.smartcut,
     // Per-job Gemini model override (quick-picker). Omitted when blank →
     // lib/api.js skips the field and the backend uses the Settings default.

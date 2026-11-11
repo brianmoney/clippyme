@@ -84,8 +84,14 @@ export function seedLogoParams(preselections) {
 }
 
 // Instagram-Stories-style hook text style keys (mirror domain/hooks.py
-// HOOK_STYLE_DEFAULTS). Forwarded to the compose hook layer.
-const HOOK_STYLE_KEYS = ['bg_enabled', 'bg_color', 'bg_opacity', 'text_color', 'outline_width', 'outline_color', 'font'];
+// HOOK_STYLE_DEFAULTS). Forwarded to the compose hook layer. `animate` MUST be
+// here too: the Create drawer exposes it, and dropping it made the recipe's
+// "Animated entrance" choice silently revert to the backend default on every
+// clip. Exported so the Edit modal seeds the same complete style vocabulary.
+export const HOOK_STYLE_KEYS = [
+    'bg_enabled', 'bg_color', 'bg_opacity', 'text_color', 'outline_width',
+    'outline_color', 'font', 'animate',
+];
 
 export function seedHookParams(clip, preselections) {
     const h = preselections?.hook || {};

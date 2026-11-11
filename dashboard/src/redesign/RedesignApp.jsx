@@ -14,9 +14,9 @@ import { PublishModal } from './publish';
 import { HistoryView, SettingsView, ApiKeyModal } from './views';
 import { LiveMonitorView } from './live';
 import { EditClipModal } from './captions';
-import { optsToPreselections, restoreJob, listBackendJobIds, fetchBackendHistory, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip } from './realApi';
+import { optsToPreselections, restoreJob, listBackendJobIds, fetchBackendHistory, deleteHistoryJob, cancelJob, pauseJob, resumeJob, stopJob, reframeClip, composeClip, getViralModels, getConfig } from './realApi';
 import { allPresets, getDefaultPresetOpts, getDefaultPresetId, saveUserPreset, deleteUserPreset, setDefaultPreset } from './presets';
-import { HOOK_STYLE_DEFAULT, TOP_TEXT_DEFAULT } from './data';
+import { GEMINI_MODELS, HOOK_STYLE_DEFAULT, TOP_TEXT_DEFAULT } from './data';
 import { clipStateToParams, buildBulkPlan } from '../lib/bulkApply';
 import { runApplyEdit } from '../lib/applyEdit';
 
@@ -101,6 +101,13 @@ export default function RedesignApp() {
   // Seed Create from the user's default preset (if any) so their preferred
   // settings are already applied on load.
   const [opts, setOpts] = useState(() => ({ ...DEFAULT_OPTS, ...(getDefaultPresetOpts() || {}) }));
+  // Per-job model picker follows the configured viral provider (Gemini or the
+  // Command Code catalog). Falls back to the curated Gemini list when the
+  // catalog can't be fetched (no key yet / offline).
+  const [modelOptions, setModelOptions] = useState(GEMINI_MODELS);
+  // Command Code keys live only in Settings (never localStorage), so the Create
+  // guard must know whether the backend already has a usable viral key.
+  const [serverKeyConfigured, setServerKeyConfigured] = useState(false);
   const [presetsVersion, setPresetsVersion] = useState(0);
   const [defaultPresetId, setDefaultPresetId] = useState(getDefaultPresetId());
   // presetsVersion is a manual cache-bust trigger: allPresets() reads from
@@ -135,7 +142,16 @@ export default function RedesignApp() {
     try {
       const c = clips?.[idx];
       if (c && patch) {
-        const metrics = { viralScore: c.viral_score, duration: (c.end || 0) - (c.start || 0) };
+        const review = c.review || {};
+        const metrics = {
+          viralScore: c.viral_score,
+          duration: (c.end || 0) - (c.start || 0),
+          candidateId: c.candidate_id,
+          discoveryModel: c.two_stage?.discovery_model_used || c.two_stage?.discovery_model,
+          reviewModel: c.two_stage?.review_model_used || c.two_stage?.review_model,
+          reviewScore: review.quality_score,
+          reviewRank: review.rank,
+        };
         if (patch.deleted === true) recordTasteEvent({ ...metrics, action: 'discarded' });
         if (patch.publishedAt) recordTasteEvent({ ...metrics, action: 'kept' });
       }
@@ -144,6 +160,35 @@ export default function RedesignApp() {
   };
 
   useEffect(() => { if (apiKey) localStorage.setItem('gemini_key', apiKey); }, [apiKey]);
+  // Persist the Create recipe under the job id once it exists. The submission
+  // hook sets preselections BEFORE the backend returns job_id, so storing them
+  // in the setter alone keyed the recipe to the previous/null job and History
+  // restores came back with no subtitles/hook/logo defaults.
+  useEffect(() => {
+    if (!jobId || !preselections) return;
+    try {
+      localStorage.setItem(`clippyme_preselections_job_${jobId}`, JSON.stringify(preselections));
+    } catch { /* quota/serialisation failure — history defaults are best-effort */ }
+  }, [jobId, preselections]);
+  useEffect(() => {
+    if (tab !== 'create') return undefined;
+    let alive = true;
+    getViralModels().then(({ models }) => {
+      if (!alive || !Array.isArray(models) || !models.length) return;
+      setModelOptions([
+        ['', 'Default (Settings)'],
+        ...models.map((m) => [m.name, m.display_name || m.name]),
+      ]);
+    }).catch(() => { /* keep curated fallback */ });
+    getConfig().then((c) => {
+      if (!alive || !c) return;
+      const provider = c.VIRAL_PROVIDER || 'gemini';
+      setServerKeyConfigured(
+        provider === 'openai' ? !!c.VIRAL_API_KEY : !!c.GEMINI_API_KEY,
+      );
+    }).catch(() => { /* keep previous state */ });
+    return () => { alive = false; };
+  }, [tab]);
   // Refresh the on-disk job set whenever the History tab opens, so a job whose
   // files were removed (rebuild/cleanup) shows as unavailable rather than
   // failing silently when clicked. Also seed the localStorage list from the
@@ -188,14 +233,38 @@ export default function RedesignApp() {
   // user can keep editing other clips while this one renders. The clip's
   // `processing` flag drives the per-card spinner; each clip is an independent
   // async chain → several can render concurrently.
-  const reprocessClip = useCallback(async (idx, clip, params) => runApplyEdit({
-    // apiIdx resolves to the backend's ABSOLUTE `shorts` position — diverges
-    // from the local array position `idx` once a manual-publish gap skips a
-    // deleted_after_publish clip.
-    jobId, idx, apiIdx: clip?.original_index ?? idx, params,
-    api: { reframeClip, composeClip },
-    updateClipState, pushToast,
-  }), [jobId, updateClipState, pushToast]);
+  const reprocessClip = useCallback(async (idx, clip, params) => {
+    const result = await runApplyEdit({
+      // apiIdx resolves to the backend's ABSOLUTE `shorts` position — diverges
+      // from the local array position `idx` once a manual-publish gap skips a
+      // deleted_after_publish clip.
+      jobId, idx, apiIdx: clip?.original_index ?? idx, params,
+      api: { reframeClip, composeClip },
+      updateClipState, pushToast,
+    });
+    try {
+      const originalDuration = (clip?.end || 0) - (clip?.start || 0);
+      const cut = (params?.dropRanges || []).reduce(
+        (total, range) => total + Math.max(0, (range?.[1] || 0) - (range?.[0] || 0)), 0,
+      );
+      if (originalDuration > 0 && cut > 0.5) {
+        const review = clip?.review || {};
+        recordTasteEvent({
+          viralScore: clip?.viral_score,
+          duration: originalDuration,
+          action: 'edited',
+          originalDuration,
+          editedDuration: Math.max(0, originalDuration - cut),
+          candidateId: clip?.candidate_id,
+          discoveryModel: clip?.two_stage?.discovery_model_used || clip?.two_stage?.discovery_model,
+          reviewModel: clip?.two_stage?.review_model_used || clip?.two_stage?.review_model,
+          reviewScore: review.quality_score,
+          reviewRank: review.rank,
+        });
+      }
+    } catch { /* taste memory is best-effort */ }
+    return result;
+  }, [jobId, updateClipState, pushToast]);
 
   const setPreselections = (value) => {
     setPreselectionsRaw(value);
@@ -317,7 +386,7 @@ export default function RedesignApp() {
   });
 
   const { handleProcess, handleBatchProcess } = useJobSubmission({
-    apiKey, setShowKeyModal, setStatus, setLogs, setResults, setProcessingMedia,
+    apiKey, serverKeyConfigured, setShowKeyModal, setStatus, setLogs, setResults, setProcessingMedia,
     setPreselections, setJobId,
     onBatchFinished: ({ succeeded, failed, total }) => {
       setTab('history');
@@ -327,14 +396,10 @@ export default function RedesignApp() {
 
   const startJob = () => {
     const pre = optsToPreselections(opts);
-    // The backend has no clip-count parameter — Gemini decides how many clips
-    // the video is worth. When the user opts out of Auto and sets a target, we
-    // pass it as a soft hint in the instructions (Gemini may still return more
-    // or fewer based on the content).
-    let instructions = opts.instructions || '';
-    if (!opts.clipsAuto) {
-      instructions = `${instructions} Aim for roughly ${opts.clips} clips.`.trim();
-    }
+    // The requested clip count rides `preselections.target_clips` into the
+    // backend, which passes it to the selection prompt and the two-stage review
+    // ceiling. Keep the free-text instructions exactly as the user typed them.
+    const instructions = opts.instructions || '';
     if (opts.mode === 'single') {
       if (opts.source === 'url') {
         if (!opts.url.trim()) return;
@@ -478,6 +543,7 @@ export default function RedesignApp() {
       {tab === 'create' && status === 'idle' && (
         <CreateView opts={opts} set={set} onPickPreset={pickPreset} onCreate={startJob}
           presets={presetList} defaultId={defaultPresetId} localInputDir={localInputDir}
+          modelOptions={modelOptions}
           onSaveCurrent={onSaveCurrentPreset} onSetDefault={onSetDefaultPreset} onDelete={onDeletePreset} />
       )}
       {tab === 'create' && (status === 'processing' || status === 'error') && (
@@ -487,7 +553,8 @@ export default function RedesignApp() {
       )}
       {tab === 'create' && status === 'complete' && (
         <ResultsView clips={clips} jobId={jobId} preselections={preselections}
-          clipStates={clipStates} onUpdateClipState={updateClipStateT} onBack={resetToCreate}
+          sourceBanner={results?.source_info?.banner}
+          analysis={results?.two_stage} clipStates={clipStates} onUpdateClipState={updateClipStateT} onBack={resetToCreate}
           onPublish={openPublish} onPublishAll={openPublish} onEdit={(c, i) => setEditClip({ clip: c, idx: i })}
           onApplyToAll={applyClipToAll} onEditSelected={(targets) => setBulkEdit({ targets })}
           pushToast={pushToast} />
@@ -507,7 +574,8 @@ export default function RedesignApp() {
             <Btn variant="secondary" size="sm" icon="arrow-left" onClick={() => setViewingHistory(false)}>Back to history</Btn>
           </div>
           <ResultsView clips={clips} jobId={jobId} preselections={preselections} embedded
-            clipStates={clipStates} onUpdateClipState={updateClipStateT}
+            sourceBanner={results?.source_info?.banner}
+            analysis={results?.two_stage} clipStates={clipStates} onUpdateClipState={updateClipStateT}
             onPublish={openPublish} onPublishAll={openPublish} onEdit={(c, i) => setEditClip({ clip: c, idx: i })}
             onApplyToAll={applyClipToAll} onEditSelected={(targets) => setBulkEdit({ targets })}
             pushToast={pushToast} />

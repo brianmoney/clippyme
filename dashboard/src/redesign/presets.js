@@ -15,10 +15,16 @@ const DEFAULT_KEY = 'clippyme_default_preset_v1';
 // 3-mode control.
 export const PRESET_KEYS = [
   'clipsAuto', 'clips', 'aspect', 'detect', 'reframe', 'reframeMode', 'letterboxZoom', 'model',
-  'smartcut', 'zoom',
-  'subtitles', 'subMode', 'subPreset', 'subPosition', 'subFont', 'subColor',
+  'smartcut', 'zoom', 'minDuration',
+  // Every subtitle drawer control, not just the original three: a preset that
+  // dropped alignment/nudge/stroke/size/classic-box silently changed the recipe
+  // on reload (and therefore the clips) when it was picked as the default.
+  'subtitles', 'subMode', 'subPreset', 'subPosition', 'subAlign', 'subOffsetY',
+  'subFont', 'subColor', 'subStroke', 'subFontSize', 'subOutlineW', 'subBg',
   'hooks', 'hookPos', 'hookSize', 'hookStyle',
   'logo', 'logoPos', 'logoSize',
+  'gradePreset',
+  'banner', 'bannerPlatform', 'bannerHandle', 'bannerYPct',
   'topText', 'topTextStyle',
   'language',
 ];

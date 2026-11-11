@@ -17,6 +17,8 @@ test('detectPipelineStep maps log markers to the active phase', () => {
     detectPipelineStep(['🎙️  Transcribing with Deepgram [nova-3]', '🤖  Analyzing with Gemini...']),
     'analyzing',
   );
+  assert.equal(detectPipelineStep(['🤖  Analyzing with Command Code...']), 'analyzing');
+  assert.equal(detectPipelineStep(['🔎 Two-stage selection (Command Code): discovery → editorial review → copy']), 'analyzing');
   assert.equal(detectPipelineStep(['🧩 Gemini unavailable — lexical TextTiling found 4 topic clips.']), 'analyzing');
   assert.equal(detectPipelineStep(['🤖  Analyzing with Gemini...', '🎬 Processing Clip 1: 10s - 40s']), 'processing');
   assert.equal(detectPipelineStep(['⏩ Skipping analysis, processing entire video...']), 'processing');
@@ -66,15 +68,27 @@ test('pipelineStepMeta.transcribe reflects the provider/model that actually ran'
   assert.equal(pipelineStepMeta(['📥 Downloading...'], {}).transcribe, undefined);
 });
 
-test('pipelineStepMeta.detect reflects the Gemini model or the no-AI fallback', () => {
+test('pipelineStepMeta.detect reflects the selected model or the no-AI fallback', () => {
   assert.equal(
     pipelineStepMeta(['🤖  Initializing Gemini with model: gemini-3.5-flash'], {}).detect,
     'gemini-3.5-flash',
   );
   assert.equal(pipelineStepMeta(['🤖  Gemini model override: gemini-2.5-pro'], {}).detect, 'gemini-2.5-pro');
   assert.equal(
+    pipelineStepMeta(['🤖  Initializing Command Code with model chain: claude-sonnet-5 → gpt-6-sol'], {}).detect,
+    'claude-sonnet-5',
+  );
+  assert.equal(
+    pipelineStepMeta(['🤖  Command Code model override: deepseek/deepseek-v4-flash'], {}).detect,
+    'deepseek/deepseek-v4-flash',
+  );
+  assert.equal(
     pipelineStepMeta(['🧩 Gemini unavailable — lexical TextTiling found 4 topic clips.'], {}).detect,
     'topic segments · no AI',
+  );
+  assert.equal(
+    pipelineStepMeta(['🔎 Two-stage selection (Command Code): discovery → editorial review → copy'], {}).detect,
+    'GLM discovery → Opus review',
   );
 });
 

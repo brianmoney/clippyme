@@ -97,3 +97,31 @@ test('tasteMinDuration exposes the stored duration floor', () => {
   }
   assert.equal(tasteMinDuration(), 92);
 });
+
+
+test('recordTasteEvent keeps two-stage editorial fields and edited actions', () => {
+  store.clear();
+  recordTasteEvent({
+    viralScore: 84, duration: 32, action: 'edited',
+    originalDuration: 32, editedDuration: 24,
+    candidateId: 'vc_abc123', discoveryModel: 'z-ai/glm-5.3-flash',
+    reviewModel: 'claude-opus-5-5', reviewScore: 8.4, reviewRank: 2,
+  });
+  const [event] = loadTasteEvents();
+  assert.equal(event.a, 'edited');
+  assert.equal(event.cid, 'vc_abc123');
+  assert.equal(event.dm, 'z-ai/glm-5.3-flash');
+  assert.equal(event.rm, 'claude-opus-5-5');
+  assert.equal(event.rs, 8.4);
+  assert.equal(event.rr, 2);
+  assert.equal(event.od, 32);
+  assert.equal(event.ed, 24);
+  // Edited events must not influence the hint.
+  assert.equal(summarizeTaste(loadTasteEvents()), '');
+});
+
+test('recordTasteEvent rejects unknown actions with new fields', () => {
+  store.clear();
+  recordTasteEvent({ action: 'approved', candidateId: 'vc_x' });
+  assert.deepEqual(loadTasteEvents(), []);
+});

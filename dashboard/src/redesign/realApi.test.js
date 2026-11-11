@@ -192,3 +192,10 @@ test('deleteHistoryJob surfaces non-OK status so callers can handle 404/409', as
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test('target_clips: omitted in Auto mode, forwarded in custom mode', () => {
+  assert.equal(optsToPreselections({ clipsAuto: true, clips: 7 }).target_clips, undefined);
+  assert.equal(optsToPreselections({ clipsAuto: false, clips: 7 }).target_clips, 7);
+  assert.equal(optsToPreselections({ clipsAuto: false, clips: 0 }).target_clips, undefined);
+});

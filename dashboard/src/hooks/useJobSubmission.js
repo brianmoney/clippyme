@@ -9,6 +9,23 @@ import { loadTasteEvents, tasteSignal } from '../lib/taste';
 // text hint alone cannot raise the clip length past the prompt's hard 15-60s
 // window, so a duration preference also fills `min_duration` — unless the user
 // set "Min clip length" explicitly (an explicit setting always wins).
+// Persist the Create recipe under each job id. Single jobs only learn their id
+// after submission, and batch jobs never become the "current" job — without
+// this, History restores came back with no subtitle/hook/logo defaults.
+function persistPreselectionsFor(jobIds, preselections) {
+  if (!preselections) return;
+  const ids = Array.isArray(jobIds) ? jobIds : [jobIds];
+  for (const jobId of ids) {
+    if (!jobId) continue;
+    try {
+      localStorage.setItem(
+        `clippyme_preselections_job_${jobId}`,
+        JSON.stringify(preselections),
+      );
+    } catch { /* quota/serialisation failure — history defaults are best-effort */ }
+  }
+}
+
 function withTaste(data) {
   const { hint, minDuration } = tasteSignal(loadTasteEvents());
   const pre = data.preselections || {};
@@ -29,6 +46,9 @@ function withTaste(data) {
  */
 export function useJobSubmission({
   apiKey,
+  // True when the backend already has a usable viral-provider key saved in
+  // Settings (Command Code keys never live in browser localStorage).
+  serverKeyConfigured = false,
   setShowKeyModal,
   setStatus,
   setLogs,
@@ -53,7 +73,7 @@ export function useJobSubmission({
   );
 
   const handleProcess = async (data) => {
-    if (!apiKey) {
+    if (!apiKey && !serverKeyConfigured) {
       setShowKeyModal(true);
       return;
     }
@@ -64,8 +84,10 @@ export function useJobSubmission({
     if (data.preselections) setPreselections(data.preselections);
 
     try {
-      const resData = await submitProcessJob(withTaste(data), apiKey);
+      const payload = withTaste(data);
+      const resData = await submitProcessJob(payload, apiKey);
       setJobId(resData.job_id);
+      persistPreselectionsFor(resData.job_id, payload.preselections);
     } catch (e) {
       setStatus('error');
       setLogs((l) => [...l, `Error: ${e.message}`]);
@@ -73,7 +95,7 @@ export function useJobSubmission({
   };
 
   const handleBatchProcess = async (data) => {
-    if (!apiKey) {
+    if (!apiKey && !serverKeyConfigured) {
       setShowKeyModal(true);
       return;
     }
@@ -90,24 +112,25 @@ export function useJobSubmission({
 
       // 1. Submit URLs as a single backend batch (if any)
       if (urls.length > 0) {
-        const batchRes = await submitBatchJob(withTaste({ ...data, urls }), apiKey);
+        const payload = withTaste({ ...data, urls });
+        const batchRes = await submitBatchJob(payload, apiKey);
         allJobIds.push(...batchRes.jobs.map((j) => j.job_id));
+        persistPreselectionsFor(batchRes.jobs.map((j) => j.job_id), payload.preselections);
         setLogs((l) => [...l, `Submitted ${batchRes.total} URL job(s)`]);
       }
 
       // 2. Submit each file individually to /api/process
       for (const f of files) {
         try {
-          const fileRes = await submitProcessJob(
-            withTaste({
-              type: 'file',
-              payload: f,
-              instructions: data.instructions,
-              preselections: data.preselections,
-            }),
-            apiKey,
-          );
+          const payload = withTaste({
+            type: 'file',
+            payload: f,
+            instructions: data.instructions,
+            preselections: data.preselections,
+          });
+          const fileRes = await submitProcessJob(payload, apiKey);
           allJobIds.push(fileRes.job_id);
+          persistPreselectionsFor(fileRes.job_id, payload.preselections);
           setLogs((l) => [...l, `Submitted file: ${f.name}`]);
         } catch (e) {
           setLogs((l) => [...l, `Failed to submit ${f.name}: ${e.message}`]);

@@ -22,9 +22,14 @@ export function detectPipelineStep(logs) {
   ) {
     return 'processing';
   }
-  // Detection phase — Gemini scoring OR the no-AI TextTiling fallback (which
-  // logs "Gemini unavailable — lexical TextTiling …").
-  if (joined.includes('Analyzing with Gemini') || joined.includes('Gemini') || joined.includes('TextTiling')) {
+  // Detection phase — AI scoring (Gemini or Command Code) OR the no-AI
+  // TextTiling fallback (which logs "Gemini unavailable — lexical TextTiling …").
+  if (
+    joined.includes('Analyzing with') ||
+    joined.includes('Command Code') ||
+    joined.includes('Gemini') ||
+    joined.includes('TextTiling')
+  ) {
     return 'analyzing';
   }
   if (joined.includes('Transcribing') || joined.includes('Faster-Whisper')) return 'transcribing';
@@ -77,12 +82,15 @@ export function pipelineStepMeta(logs = [], opts = {}) {
     meta.transcribe = `whisper ${m[1].trim().toLowerCase()}`;
   }
 
-  // --- Detect moments: Gemini model, or the no-AI TextTiling fallback ------
+  // --- Detect moments: selected model, or the no-AI TextTiling fallback -----
   if (joined.includes('TextTiling')) {
     meta.detect = 'topic segments · no AI';
+  } else if (joined.includes('Two-stage selection') || joined.includes('two-stage review')) {
+    meta.detect = 'GLM discovery → Opus review';
   } else if (
     (m = joined.match(/Gemini model override:\s*([\w.-]+)/)) ||
-    (m = joined.match(/Initializing Gemini with model:\s*([\w.-]+)/))
+    (m = joined.match(/Command Code model override:\s*([\w./:@-]+)/)) ||
+    (m = joined.match(/Initializing (?:Gemini|Command Code) with model(?: chain)?:\s*([\w./:@-]+)/))
   ) {
     meta.detect = m[1];
   }

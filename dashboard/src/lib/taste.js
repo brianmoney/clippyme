@@ -25,14 +25,31 @@ export function loadTasteEvents() {
   }
 }
 
-// action: 'kept' (published) | 'discarded' (removed/disabled).
-export function recordTasteEvent({ viralScore, duration, action }) {
-  if (action !== 'kept' && action !== 'discarded') return;
+// action: 'kept' (published) | 'discarded' (removed/disabled) | 'edited'
+// (boundaries / smart-cut changed after selection). Only kept/discarded feed
+// the hint; the extra fields are retained so the two-stage editorial signals
+// can later be joined with real-world performance data.
+export function recordTasteEvent({
+  viralScore, duration, action,
+  originalDuration, editedDuration,
+  candidateId, discoveryModel, reviewModel, reviewScore, reviewRank,
+  rejectionReason, performance,
+}) {
+  if (action !== 'kept' && action !== 'discarded' && action !== 'edited') return;
   const ev = {
     s: Number.isFinite(viralScore) ? Math.round(viralScore) : null,
     d: Number.isFinite(duration) ? Math.round(duration) : null,
     a: action,
   };
+  if (Number.isFinite(originalDuration)) ev.od = Math.round(originalDuration);
+  if (Number.isFinite(editedDuration)) ev.ed = Math.round(editedDuration);
+  if (candidateId) ev.cid = String(candidateId);
+  if (discoveryModel) ev.dm = String(discoveryModel);
+  if (reviewModel) ev.rm = String(reviewModel);
+  if (Number.isFinite(reviewScore)) ev.rs = Math.round(reviewScore * 100) / 100;
+  if (Number.isFinite(reviewRank)) ev.rr = Math.round(reviewRank);
+  if (rejectionReason) ev.rej = String(rejectionReason).slice(0, 240);
+  if (performance && typeof performance === 'object') ev.perf = performance;
   try {
     const events = loadTasteEvents();
     events.push(ev);

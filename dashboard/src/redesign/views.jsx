@@ -5,7 +5,7 @@ import { useModalA11y } from './useModalA11y';
 import { Icon, Btn, Badge, Switch, Segmented, Panel } from './primitives';
 import { Hero } from './chrome';
 import {
-  getConfig, saveConfig, getModels, cookiesStatus, uploadCookies, deleteCookies,
+  getConfig, saveConfig, getModels, getViralModels, cookiesStatus, uploadCookies, deleteCookies,
   getZernio, saveZernio, discoverZernioAccounts,
   listFonts, uploadFont, deleteFont, logoStatus, uploadLogo, deleteLogo,
 } from './realApi';
@@ -20,6 +20,15 @@ const FALLBACK_MODELS = [
   { name: 'gemini-2.5-flash', display_name: 'Gemini 2.5 Flash — budget' },
   { name: 'gemini-3.1-pro-preview', display_name: 'Gemini 3.1 Pro — max quality' },
   { name: 'gemini-2.5-pro', display_name: 'Gemini 2.5 Pro — max quality' },
+];
+
+const DEFAULT_VIRAL_BASE_URL = 'https://api.commandcode.ai/provider/v1';
+
+// Curated fallback when the provider catalog can't be fetched yet.
+const FALLBACK_VIRAL_MODELS = [
+  { name: 'claude-sonnet-5', display_name: 'Claude Sonnet 5 — recommended' },
+  { name: 'gpt-6-sol', display_name: 'GPT-6 Sol' },
+  { name: 'deepseek/deepseek-v4-flash', display_name: 'DeepSeek V4 Flash' },
 ];
 
 // YouTube video category ids (what Zernio/YouTube expect). Mirrors the backend
@@ -161,6 +170,21 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
   const [model, setModel] = useState('');
   const [models, setModels] = useState(FALLBACK_MODELS);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [viralProvider, setViralProvider] = useState('gemini');
+  const [viralKey, setViralKey] = useState('');
+  const [viralUrl, setViralUrl] = useState(DEFAULT_VIRAL_BASE_URL);
+  const [viralModel, setViralModel] = useState('');
+  const [viralModels, setViralModels] = useState(FALLBACK_VIRAL_MODELS);
+  const [loadingViralModels, setLoadingViralModels] = useState(false);
+  const [viralModelsError, setViralModelsError] = useState('');
+  const [viralMode, setViralMode] = useState('auto');
+  const [discoveryModel, setDiscoveryModel] = useState('z-ai/glm-5.3-flash');
+  const [reviewModel, setReviewModel] = useState('claude-opus-5-5');
+  const [copyModel, setCopyModel] = useState('');
+  const [maxCandidates, setMaxCandidates] = useState('32');
+  const [maxSelected, setMaxSelected] = useState('8');
+  const [minQuality, setMinQuality] = useState('6');
+  const [stageFallback, setStageFallback] = useState('single');
 
   // Pull the live model list from the backend (uses the saved key if the
   // header is empty). Merges discovery with the curated fallback + the
@@ -180,25 +204,60 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
     finally { setLoadingModels(false); }
   };
 
+  // Live model catalog for the OpenAI-compatible (Command Code) provider.
+  const loadViralModels = async (prov, key, url) => {
+    const active = prov || viralProvider;
+    if (active !== 'openai' || typeof getViralModels !== 'function') return;
+    setLoadingViralModels(true);
+    try {
+      const result = await getViralModels({
+        provider: active,
+        apiKey: key ?? viralKey,
+        baseUrl: url ?? viralUrl,
+      });
+      setViralModelsError(result?.error ? String(result.error).slice(0, 160) : '');
+      if (Array.isArray(result?.models) && result.models.length) setViralModels(result.models);
+    } catch (err) {
+      setViralModelsError(String(err?.message || err).slice(0, 160));
+    }
+    finally { setLoadingViralModels(false); }
+  };
+
   // Source of truth for "is this key set" is always the backend's response,
   // never the (optimistic) input text — refetched after every save/clear so
   // the badge can't drift from what's actually persisted.
   const refreshConfig = async () => {
     const c = await getConfig();
-    if (!c) { pushToast?.('warn', 'Could not refresh key status'); return; }
+    if (!c) { pushToast?.('warn', 'Could not refresh key status'); return null; }
     setPresent({
       gemini: !!c.GEMINI_API_KEY, hf: !!c.HF_TOKEN, deepgram: !!c.DEEPGRAM_API_KEY, elevenlabs: !!c.ELEVENLABS_API_KEY,
       twitchId: !!c.TWITCH_CLIENT_ID, twitchSecret: !!c.TWITCH_CLIENT_SECRET,
       openai: !!(c.OPENAI_CAPTIONS_API_KEY && c.OPENAI_CAPTIONS_BASE_URL),
+      viral: !!c.VIRAL_API_KEY,
     });
     if (c.TRANSCRIPTION_PROVIDER) setProvider(c.TRANSCRIPTION_PROVIDER);
     if (c.GEMINI_MODEL) setModel(c.GEMINI_MODEL);
     if (c.OPENAI_CAPTIONS_BASE_URL) setOpenaiUrl(c.OPENAI_CAPTIONS_BASE_URL);
     if (c.OPENAI_CAPTIONS_MODEL) setOpenaiModel(c.OPENAI_CAPTIONS_MODEL);
+    if (c.VIRAL_PROVIDER) setViralProvider(c.VIRAL_PROVIDER);
+    if (c.VIRAL_BASE_URL) setViralUrl(c.VIRAL_BASE_URL);
+    if (c.VIRAL_MODEL) setViralModel(c.VIRAL_MODEL);
+    if (c.VIRAL_MODE) setViralMode(c.VIRAL_MODE);
+    if (c.VIRAL_DISCOVERY_MODEL) setDiscoveryModel(c.VIRAL_DISCOVERY_MODEL);
+    if (c.VIRAL_REVIEW_MODEL) setReviewModel(c.VIRAL_REVIEW_MODEL);
+    if (c.VIRAL_COPY_MODEL) setCopyModel(c.VIRAL_COPY_MODEL);
+    if (c.VIRAL_MAX_CANDIDATES) setMaxCandidates(String(c.VIRAL_MAX_CANDIDATES));
+    if (c.VIRAL_MAX_SELECTED_CLIPS) setMaxSelected(String(c.VIRAL_MAX_SELECTED_CLIPS));
+    if (c.VIRAL_MIN_QUALITY) setMinQuality(String(c.VIRAL_MIN_QUALITY));
+    if (c.VIRAL_TWO_STAGE_FALLBACK) setStageFallback(c.VIRAL_TWO_STAGE_FALLBACK);
+    return c;
   };
 
   useEffect(() => {
-    refreshConfig().then(loadModels);
+    refreshConfig().then((c) => {
+      loadModels();
+      if ((c?.VIRAL_PROVIDER || 'gemini') === 'openai') loadViralModels('openai', '', '');
+    });
     getZernio().then((z) => {
       setZernioState(z);
       // Loaded profiles carry api_key_masked, never the raw key — reset the
@@ -331,9 +390,39 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
       <Hero eyebrow="Settings" line1="Keys & connections." sub="Everything is stored locally. Your keys never leave your machine." />
 
       <Panel title="API keys" sub="Required for transcription & moment detection" icon="key-round" style={{ marginBottom: 18 }}>
-        <KeyRow icon="sparkles" name="Gemini" desc="Viral-moment detection" value={gemini} present={present.gemini}
-          onChange={(v) => { setGemini(v); onApiKey?.(v); }} onSave={() => saveKeys({ GEMINI_API_KEY: gemini })}
-          onClear={() => { setGemini(''); onApiKey?.(''); saveKeys({ GEMINI_API_KEY: '' }); }} placeholder="AIza…" />
+        <div className="opt">
+          <div className="oico"><Icon n="sparkles" /></div>
+          <div className="otxt"><div className="ot">Viral moment provider</div><div className="od">Who finds and scores the clips · applied to new jobs</div></div>
+          <div className="r"><Segmented value={viralProvider}
+            onChange={(id) => { setViralProvider(id); saveKeys({ VIRAL_PROVIDER: id }); if (id === 'openai') loadViralModels('openai'); }}
+            options={[{ id: 'gemini', label: 'Gemini' }, { id: 'openai', label: 'Command Code' }]} /></div>
+        </div>
+        {viralProvider === 'gemini' ? (
+          <KeyRow icon="sparkles" name="Gemini" desc="Viral-moment detection" value={gemini} present={present.gemini}
+            onChange={(v) => { setGemini(v); onApiKey?.(v); }} onSave={() => saveKeys({ GEMINI_API_KEY: gemini })}
+            onClear={() => { setGemini(''); onApiKey?.(''); saveKeys({ GEMINI_API_KEY: '' }); }} placeholder="AIza…" />
+        ) : (
+          <>
+            <div className="opt">
+              <div className="oico"><Icon n="link" /></div>
+              <div className="otxt"><div className="ot">Command Code endpoint</div><div className="od">OpenAI/Anthropic-compatible base URL · key never leaves your machine</div></div>
+              <div className="r" style={{ flex: '0 0 340px' }}>
+                <input className="key-input" style={{ width: '100%' }} aria-label="Command Code base URL"
+                  value={viralUrl} placeholder={DEFAULT_VIRAL_BASE_URL}
+                  onChange={(e) => setViralUrl(e.target.value)}
+                  onBlur={() => saveKeys({ VIRAL_BASE_URL: viralUrl.trim() })} />
+              </div>
+            </div>
+            <KeyRow icon="key-round" name="Command Code" desc="Viral-moment detection · OpenAI/Anthropic-compatible" value={viralKey} present={present.viral}
+              onChange={setViralKey}
+              onSave={() => saveKeys({
+                VIRAL_API_KEY: viralKey,
+                VIRAL_BASE_URL: viralUrl.trim(),
+                VIRAL_PROVIDER: 'openai',
+              }).then(() => loadViralModels('openai', viralKey, viralUrl))}
+              onClear={() => { setViralKey(''); saveKeys({ VIRAL_API_KEY: '' }); }} placeholder="Command Code API key" />
+          </>
+        )}
         <KeyRow icon="audio-lines" name="Deepgram" desc="Nova-3 transcription" value={deepgram} present={present.deepgram}
           onChange={setDeepgram} onSave={() => saveKeys({ DEEPGRAM_API_KEY: deepgram })}
           onClear={() => { setDeepgram(''); saveKeys({ DEEPGRAM_API_KEY: '' }); }} placeholder="dg_…" />
@@ -364,23 +453,130 @@ export function SettingsView({ apiKey, onApiKey, cookiesConfigured, onCookiesCha
         {provider === 'elevenlabs' && !present.elevenlabs && (
           <div className="od" style={{ color: 'var(--warn, #f5a623)', padding: '0 0 8px 44px' }}>⚠ No ElevenLabs key saved — pipeline will use local Whisper.</div>
         )}
-        <div className="opt" style={{ borderBottom: 0 }}>
-          <div className="oico"><Icon n="sparkles" /></div>
-          <div className="otxt"><div className="ot">Gemini model</div><div className="od">Viral-moment detection model · applied to new jobs</div></div>
-          <div className="r" style={{ gap: 8 }}>
-            <select className="key-input" style={{ width: 'auto', minWidth: 200, fontFamily: 'var(--font-sans)' }}
-              value={model}
-              onChange={(e) => { setModel(e.target.value); saveKeys({ GEMINI_MODEL: e.target.value }); }}>
-              {!model && <option value="">Default (gemini-3.5-flash)</option>}
-              {model && !models.some((m) => m.name === model) && <option value={model}>{model}</option>}
-              {models.map((m) => <option key={m.name} value={m.name}>{m.display_name || m.name}</option>)}
-            </select>
-            <Btn variant="ghost" size="sm" icon="refresh-cw" onClick={() => loadModels()} disabled={loadingModels}>
-              {loadingModels ? '…' : 'Refresh'}
-            </Btn>
+        {viralProvider === 'gemini' ? (
+          <div className="opt" style={{ borderBottom: 0 }}>
+            <div className="oico"><Icon n="sparkles" /></div>
+            <div className="otxt"><div className="ot">Gemini model</div><div className="od">Viral-moment detection model · applied to new jobs</div></div>
+            <div className="r" style={{ gap: 8 }}>
+              <select className="key-input" style={{ width: 'auto', minWidth: 200, fontFamily: 'var(--font-sans)' }}
+                value={model}
+                onChange={(e) => { setModel(e.target.value); saveKeys({ GEMINI_MODEL: e.target.value }); }}>
+                {!model && <option value="">Default (gemini-3.5-flash)</option>}
+                {model && !models.some((m) => m.name === model) && <option value={model}>{model}</option>}
+                {models.map((m) => <option key={m.name} value={m.name}>{m.display_name || m.name}</option>)}
+              </select>
+              <Btn variant="ghost" size="sm" icon="refresh-cw" onClick={() => loadModels()} disabled={loadingModels}>
+                {loadingModels ? '…' : 'Refresh'}
+              </Btn>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="opt" style={{ borderBottom: 0 }}>
+            <div className="oico"><Icon n="sparkles" /></div>
+            <div className="otxt"><div className="ot">Command Code model</div><div className="od">Any model in your Command Code catalog · Claude, GPT and open models</div></div>
+            <div className="r" style={{ gap: 8 }}>
+              <select className="key-input" style={{ width: 'auto', minWidth: 240, maxWidth: 320, fontFamily: 'var(--font-sans)' }}
+                value={viralModel}
+                onChange={(e) => { setViralModel(e.target.value); saveKeys({ VIRAL_MODEL: e.target.value }); }}>
+                {!viralModel && <option value="">Default (Claude Sonnet 5)</option>}
+                {viralModel && !viralModels.some((m) => m.name === viralModel) && <option value={viralModel}>{viralModel}</option>}
+                {viralModels.map((m) => <option key={m.name} value={m.name}>{m.display_name || m.name}</option>)}
+              </select>
+              <Btn variant="ghost" size="sm" icon="refresh-cw" onClick={() => loadViralModels('openai')} disabled={loadingViralModels}>
+                {loadingViralModels ? '…' : 'Refresh'}
+              </Btn>
+            </div>
+          </div>
+        )}
+        {viralProvider === 'openai' && viralModelsError && (
+          <div className="od" style={{ color: 'var(--warn, #f5a623)', padding: '0 0 8px 44px' }}>
+            ⚠ Could not load models: {viralModelsError}
+          </div>
+        )}
       </Panel>
+
+      {viralProvider === 'openai' && (
+        <Panel title="Two-stage selection" sub="GLM discovers broadly → Opus ranks independently → copy is written last" icon="layers" style={{ marginBottom: 18 }}>
+          <div className="opt">
+            <div className="oico"><Icon n="layers" /></div>
+            <div className="otxt"><div className="ot">Selection mode</div><div className="od">Auto uses two-stage on Command Code · Single keeps the legacy one-model flow</div></div>
+            <div className="r"><Segmented value={viralMode}
+              onChange={(id) => { setViralMode(id); saveKeys({ VIRAL_MODE: id }); }}
+              options={[{ id: 'auto', label: 'Auto' }, { id: 'two_stage', label: 'Two-stage' }, { id: 'single', label: 'Single' }]} /></div>
+          </div>
+          <div className="opt">
+            <div className="oico"><Icon n="sparkles" /></div>
+            <div className="otxt"><div className="ot">Discovery model</div><div className="od">High-recall candidate finder · default z-ai/glm-5.3-flash</div></div>
+            <div className="r" style={{ flex: '0 0 260px' }}>
+              <select className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                aria-label="Discovery model"
+                value={discoveryModel}
+                onChange={(e) => { setDiscoveryModel(e.target.value); saveKeys({ VIRAL_DISCOVERY_MODEL: e.target.value }); }}>
+                {discoveryModel && !viralModels.some((m) => m.name === discoveryModel) && <option value={discoveryModel}>{discoveryModel}</option>}
+                {viralModels.map((m) => <option key={m.name} value={m.name}>{m.display_name || m.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="opt">
+            <div className="oico"><Icon n="trending-up" /></div>
+            <div className="otxt"><div className="ot">Review model</div><div className="od">Independent editorial scoring, ranking and final selection · default claude-opus-5-5</div></div>
+            <div className="r" style={{ flex: '0 0 260px' }}>
+              <select className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                aria-label="Review model"
+                value={reviewModel}
+                onChange={(e) => { setReviewModel(e.target.value); saveKeys({ VIRAL_REVIEW_MODEL: e.target.value }); }}>
+                {reviewModel && !viralModels.some((m) => m.name === reviewModel) && <option value={reviewModel}>{reviewModel}</option>}
+                {viralModels.map((m) => <option key={m.name} value={m.name}>{m.display_name || m.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="opt">
+            <div className="oico"><Icon n="type" /></div>
+            <div className="otxt"><div className="ot">Copy model</div><div className="od">Writes titles/captions/hooks only for selected clips · blank reuses the discovery model</div></div>
+            <div className="r" style={{ flex: '0 0 260px' }}>
+              <select className="key-input" style={{ width: '100%', fontFamily: 'var(--font-sans)' }}
+                aria-label="Copy model"
+                value={copyModel}
+                onChange={(e) => { setCopyModel(e.target.value); saveKeys({ VIRAL_COPY_MODEL: e.target.value }); }}>
+                <option value="">Same as discovery</option>
+                {copyModel && !viralModels.some((m) => m.name === copyModel) && <option value={copyModel}>{copyModel}</option>}
+                {viralModels.map((m) => <option key={m.name} value={m.name}>{m.display_name || m.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="opt">
+            <div className="oico"><Icon n="sliders-horizontal" /></div>
+            <div className="otxt"><div className="ot">Discovery candidates</div><div className="od">Recall-oriented cap before review (4-60)</div></div>
+            <div className="r"><input className="key-input" style={{ width: 90 }} type="number" min="4" max="60"
+              aria-label="Maximum discovery candidates" value={maxCandidates}
+              onChange={(e) => setMaxCandidates(e.target.value)}
+              onBlur={() => saveKeys({ VIRAL_MAX_CANDIDATES: maxCandidates })} /></div>
+          </div>
+          <div className="opt">
+            <div className="oico"><Icon n="scissors" /></div>
+            <div className="otxt"><div className="ot">Final selected clips</div><div className="od">Hard ceiling after review (1-20)</div></div>
+            <div className="r"><input className="key-input" style={{ width: 90 }} type="number" min="1" max="20"
+              aria-label="Maximum final selected clips" value={maxSelected}
+              onChange={(e) => setMaxSelected(e.target.value)}
+              onBlur={() => saveKeys({ VIRAL_MAX_SELECTED_CLIPS: maxSelected })} /></div>
+          </div>
+          <div className="opt">
+            <div className="oico"><Icon n="flame" /></div>
+            <div className="otxt"><div className="ot">Editorial quality threshold</div><div className="od">0-10 mean of the Opus rubric · below this a clip is rejected</div></div>
+            <div className="r"><input className="key-input" style={{ width: 90 }} type="number" min="0" max="10" step="0.5"
+              aria-label="Minimum editorial quality" value={minQuality}
+              onChange={(e) => setMinQuality(e.target.value)}
+              onBlur={() => saveKeys({ VIRAL_MIN_QUALITY: minQuality })} /></div>
+          </div>
+          <div className="opt" style={{ borderBottom: 0 }}>
+            <div className="oico"><Icon n="panel-top" /></div>
+            <div className="otxt"><div className="ot">If a stage fails</div><div className="od">Fall back to the legacy single-stage flow, or return no clips</div></div>
+            <div className="r"><Segmented value={stageFallback}
+              onChange={(id) => { setStageFallback(id); saveKeys({ VIRAL_TWO_STAGE_FALLBACK: id }); }}
+              options={[{ id: 'single', label: 'Fallback' }, { id: 'off', label: 'No fallback' }]} /></div>
+          </div>
+        </Panel>
+      )}
 
       <Panel title="AI captions" sub="Optional OpenAI-compatible model for caption optimization" icon="sparkles" style={{ marginBottom: 18 }}>
         <div className="zernio-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 14 }}>
@@ -589,10 +785,10 @@ export function ApiKeyModal({ onClose, onGoToSettings }) {
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" ref={panelRef}
         role="dialog" aria-modal="true" aria-labelledby="apikey-modal-title">
-        <div className="modal-head"><h3 id="apikey-modal-title">Add your Gemini key</h3><button className="x" onClick={onClose} aria-label="Close"><Icon n="x" /></button></div>
+        <div className="modal-head"><h3 id="apikey-modal-title">Add a viral-detection key</h3><button className="x" onClick={onClose} aria-label="Close"><Icon n="x" /></button></div>
         <div className="modal-body">
           <p style={{ color: 'var(--fg-2)', fontSize: 14, lineHeight: 1.55 }}>
-            ClippyMe needs a Gemini key to score the transcript and find viral moments. It&apos;s stored locally and never leaves your machine.
+            ClippyMe needs a Gemini key or a Command Code key to score the transcript and find viral moments. It&apos;s stored locally and never leaves your machine.
           </p>
         </div>
         <div className="modal-foot">

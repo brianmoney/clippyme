@@ -291,7 +291,7 @@ function TopTextConfig({ opts, set }) {
   );
 }
 
-function OptionsPanel({ opts, set }) {
+function OptionsPanel({ opts, set, modelOptions }) {
   const [subCfg, setSubCfg] = useState(false);
   const [hookCfg, setHookCfg] = useState(false);
   const [logoCfg, setLogoCfg] = useState(false);
@@ -304,14 +304,15 @@ function OptionsPanel({ opts, set }) {
         <div className="oico"><Icon n="scissors" /></div>
         <div className="otxt">
           <div className="ot">Clips per video</div>
-          <div className="od">{opts.clipsAuto ? 'Auto · ClippyMe picks the best number for the video' : 'Aim for a rough target (a hint, not a hard cap)'}</div>
+          <div className="od">{opts.clipsAuto ? 'Auto · ClippyMe picks the best number for the video' : 'Target passed to the selection prompt · fewer when the material is weak'}</div>
         </div>
         <div className="r" style={{ gap: 9 }}>
-          {/* No ceiling: the number is a hint in the Gemini prompt, not a cap the
-              pipeline enforces, so the stepper's default max=12 was arbitrary. */}
+          {/* The requested count now reaches the selection prompt and the
+              two-stage review ceiling. 20 is the hard output limit enforced by
+              the clip schema. */}
           {!opts.clipsAuto && (
             <Stepper value={opts.clips} set={(v) => set({ clips: v })}
-              max={Infinity} label="Clip count" />
+              max={20} label="Clip count" />
           )}
           <Segmented value={opts.clipsAuto ? 'auto' : 'custom'}
             onChange={(id) => set({ clipsAuto: id === 'auto' })}
@@ -326,15 +327,18 @@ function OptionsPanel({ opts, set }) {
       </div>
 
       <div className="label" style={{ margin: '16px 0 4px' }}>AI &amp; reframe</div>
-      <OptRow icon="sparkles" label="Find viral moments" desc="Gemini scores the transcript · off = whole video"
+      <OptRow icon="sparkles" label="Find viral moments" desc="AI scores the transcript · off = whole video"
         on={opts.detect} set={(v) => set({ detect: v })} />
       {opts.detect && (
         <div className="opt">
           <div className="oico"><Icon n="sparkles" /></div>
-          <div className="otxt" style={{ flex: 1 }}><div className="ot">Gemini model</div><div className="od">Override for this job · blank uses the Settings default</div></div>
+          <div className="otxt" style={{ flex: 1 }}><div className="ot">Model</div><div className="od">Single-stage / fallback override · two-stage models live in Settings</div></div>
           <div className="r" style={{ flex: '0 0 184px' }}>
             <select className="sel" value={opts.model || ''} onChange={(e) => set({ model: e.target.value })}>
-              {GEMINI_MODELS.map(([v, l]) => <option key={v || 'default'} value={v}>{l}</option>)}
+              {opts.model && !modelOptions.some(([v]) => v === opts.model) && (
+                <option value={opts.model}>{opts.model}</option>
+              )}
+              {modelOptions.map(([v, l]) => <option key={v || 'default'} value={v}>{l}</option>)}
             </select>
           </div>
         </div>
@@ -439,7 +443,7 @@ function SummaryBar({ opts, ready, count, onCreate, error }) {
   );
 }
 
-export function CreateView({ opts, set, onPickPreset, onCreate, presets, defaultId, onSetDefault, onDelete, onSaveCurrent, localInputDir = '' }) {
+export function CreateView({ opts, set, onPickPreset, onCreate, presets, defaultId, onSetDefault, onDelete, onSaveCurrent, localInputDir = '', modelOptions = GEMINI_MODELS }) {
   const validation = validateCreateOptions(opts);
   const ready = validation.valid;
   const nSources = Math.max(1, validation.sourceCount);
@@ -457,7 +461,7 @@ export function CreateView({ opts, set, onPickPreset, onCreate, presets, default
           <PresetCards presets={presets} active={opts.preset} defaultId={defaultId}
             onPick={onPickPreset} onSetDefault={onSetDefault} onDelete={onDelete} onSaveCurrent={onSaveCurrent} />
         </div>
-        <OptionsPanel opts={opts} set={set} />
+        <OptionsPanel opts={opts} set={set} modelOptions={modelOptions} />
       </div>
       <SummaryBar opts={opts} ready={ready} count={count} onCreate={onCreate} error={validation.firstError} />
     </div>
