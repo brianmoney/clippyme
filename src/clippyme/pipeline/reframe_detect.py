@@ -234,36 +234,32 @@ def detect_face_candidates(frame):
             
     return candidates
 
-def detect_person_yolo(frame):
-    """
-    Fallback: Detect largest person using YOLO when face detection fails.
-    Returns [x, y, w, h] of the person's 'upper body' approximation.
-    """
+def detect_people_yolo(frame):
+    """Return every YOLO person box ``[x, y, w, h]`` (class 0) in the frame."""
     model = _get_yolo_model()
     if model is None:
-        return None
+        return []
     results = model(frame, verbose=False, classes=[0])  # class 0 is person
-    
     if not results:
-        return None
-        
-    best_box = None
-    max_area = 0
-    
+        return []
+    boxes = []
     for result in results:
-        boxes = result.boxes
-        for box in boxes:
+        for box in result.boxes:
             x1, y1, x2, y2 = [int(i) for i in box.xyxy[0]]
-            w = x2 - x1
-            h = y2 - y1
-            area = w * h
-            
-            if area > max_area:
-                max_area = area
-                # Return the full person bbox. SmoothedCameraman.update_target
-                # applies the head-zone offset itself when is_person_box=True
-                # (y_center = y + h*0.15). Previously we truncated here AND
-                # there, which stacked the offsets and aimed above the head.
-                best_box = [x1, y1, w, h]
-                
-    return best_box
+            w, h = x2 - x1, y2 - y1
+            if w > 0 and h > 0:
+                boxes.append([x1, y1, w, h])
+    return boxes
+
+
+def detect_person_yolo(frame):
+    """
+    Fallback: Detect the largest person using YOLO when face detection fails.
+    Returns [x, y, w, h] of the full person bbox (or None).
+    """
+    boxes = detect_people_yolo(frame)
+    if not boxes:
+        return None
+    # SmoothedCameraman.update_target applies the head-zone offset itself when
+    # is_person_box=True (y_center = y + h*0.15); do not truncate the box here.
+    return max(boxes, key=lambda b: b[2] * b[3])

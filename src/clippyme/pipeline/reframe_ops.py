@@ -681,3 +681,98 @@ def build_smoothed_trajectory(targets, scene_ids, window: int, polyorder: int,
             out[i + k] = (float(xs[k]), float(ys[k]), float(zs[k]))
         i = j
     return out
+
+
+def pad_face_box(box, frame_w: float, frame_h: float, *,
+                 side_ratio: float = 0.12, top_ratio: float = 0.20,
+                 bottom_ratio: float = 0.08):
+    """Expand a raw face box to include hair/head, chin and a safety margin.
+
+    Face detectors return a tight facial box; framing exactly that box is what
+    clips the top of the head or the chin when the crop is clamped. The padded
+    box is used only for camera targeting, never for detection.
+    """
+    try:
+        x, y, w, h = [float(v) for v in box]
+    except (TypeError, ValueError):
+        return box
+    if w <= 0 or h <= 0:
+        return box
+    x1 = max(0.0, x - w * max(0.0, side_ratio))
+    y1 = max(0.0, y - h * max(0.0, top_ratio))
+    x2 = min(float(frame_w), x + w + w * max(0.0, side_ratio))
+    y2 = min(float(frame_h), y + h + h * max(0.0, bottom_ratio))
+    if x2 <= x1 or y2 <= y1:
+        return box
+    return [int(round(x1)), int(round(y1)), int(round(x2 - x1)), int(round(y2 - y1))]
+
+
+def best_person_box_for(face_box, people_boxes):
+    """Pick the YOLO person box that best contains the tracked face.
+
+    ``people_boxes`` is a list of ``[x, y, w, h]``. Containment of the face
+    centre wins; otherwise the largest face/person overlap. Returns ``None``
+    when there are no candidates.
+    """
+    if not people_boxes:
+        return None
+    try:
+        fx, fy, fw, fh = [float(v) for v in face_box]
+    except (TypeError, ValueError):
+        return max(people_boxes, key=lambda b: float(b[2]) * float(b[3]))
+    fcx, fcy = fx + fw / 2.0, fy + fh / 2.0
+    face_area = max(1.0, fw * fh)
+    best = None
+    best_score = -1.0
+    for box in people_boxes:
+        try:
+            x, y, w, h = [float(v) for v in box]
+        except (TypeError, ValueError):
+            continue
+        if w <= 0 or h <= 0:
+            continue
+        inside = (x <= fcx <= x + w) and (y <= fcy <= y + h)
+        inter_w = max(0.0, min(fx + fw, x + w) - max(fx, x))
+        inter_h = max(0.0, min(fy + fh, y + h) - max(fy, y))
+        overlap = (inter_w * inter_h) / face_area
+        score = overlap + (1.0 if inside else 0.0)
+        if score > best_score:
+            best_score = score
+            best = box
+    return best
+
+
+def merge_static_and_dynamic(collapsed, dynamic, targets, scene_ids, *,
+                             x_max: float, y_max: float,
+                             max_span_x: float = 0.12,
+                             max_span_y: float = 0.12):
+    """Use a static per-scene crop only when the subject actually stays put.
+
+    ``collapsed`` is the per-frame static view from
+    :func:`collapse_scene_targets`; ``dynamic`` is the smoothed per-frame path.
+    For each scene whose raw target centre travels more than ``max_span_x`` /
+    ``max_span_y`` of the frame, the dynamic path wins — otherwise a locked
+    tripod crop would let a moving subject walk out of frame (the common cause
+    of cut-off heads/faces). Stationary scenes keep the comfort-mode lock.
+    """
+    n = min(len(targets), len(scene_ids), len(collapsed))
+    out = list(collapsed)
+    i = 0
+    while i < n:
+        if targets[i] is None:
+            i += 1
+            continue
+        j = i
+        sid = scene_ids[i]
+        while j < n and targets[j] is not None and scene_ids[j] == sid:
+            j += 1
+        xs = [float(targets[k][0]) for k in range(i, j)]
+        ys = [float(targets[k][1]) for k in range(i, j)]
+        span_x = (max(xs) - min(xs)) / x_max if x_max > 0 and xs else 0.0
+        span_y = (max(ys) - min(ys)) / y_max if y_max > 0 and ys else 0.0
+        if span_x > max_span_x or span_y > max_span_y:
+            for k in range(i, j):
+                if k < len(dynamic) and dynamic[k] is not None:
+                    out[k] = dynamic[k]
+        i = j
+    return out

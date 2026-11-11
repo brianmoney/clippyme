@@ -666,3 +666,56 @@ def test_normalize_letterbox_zoom_accepts_fractions_and_percentages():
 def test_normalize_letterbox_zoom_rejects_garbage():
     with pytest.raises(ValueError):
         ro.normalize_letterbox_zoom("abc")
+
+
+# --- subject-safety framing (padding + dynamic fallback) --------------------
+
+def test_pad_face_box_adds_hair_and_side_margin():
+    box = ro.pad_face_box([100, 100, 200, 200], 1920, 1080,
+                          side_ratio=0.10, top_ratio=0.20, bottom_ratio=0.10)
+    assert box[0] == 80
+    assert box[1] == 60
+    assert box[2] == 240
+    assert box[3] == 260
+
+
+def test_pad_face_box_clamps_to_frame():
+    box = ro.pad_face_box([0, 0, 100, 100], 1920, 1080,
+                          side_ratio=0.5, top_ratio=0.5, bottom_ratio=0.5)
+    assert box[0] == 0 and box[1] == 0
+    assert box[0] + box[2] <= 1920 and box[1] + box[3] <= 1080
+
+
+def test_best_person_box_for_prefers_containing_box():
+    face = [100, 100, 100, 100]
+    people = [[80, 60, 300, 400], [600, 60, 100, 300]]
+    assert ro.best_person_box_for(face, people) == [80, 60, 300, 400]
+    assert ro.best_person_box_for(face, []) is None
+
+
+def test_merge_static_and_dynamic_keeps_static_only_when_subject_stays():
+    targets = [
+        (100.0, 100.0, 1.2), (110.0, 100.0, 1.2),   # scene 0: 1% drift -> static
+        (100.0, 100.0, 1.2), (400.0, 100.0, 1.2),   # scene 1: 30% drift -> dynamic
+    ]
+    sids = [0, 0, 1, 1]
+    collapsed = [(100.0, 100.0, 1.2)] * 4
+    dynamic = [(100.0, 100.0, 1.2), (105.0, 100.0, 1.2),
+               (100.0, 100.0, 1.2), (400.0, 100.0, 1.2)]
+    out = ro.merge_static_and_dynamic(
+        collapsed, dynamic, targets, sids,
+        x_max=1000, y_max=1000, max_span_x=0.12, max_span_y=0.12,
+    )
+    assert out[0] == collapsed[0]
+    assert out[1] == collapsed[1]
+    assert out[2] == dynamic[2]
+    assert out[3] == dynamic[3]
+
+
+def test_merge_static_and_dynamic_preserves_none_frames():
+    out = ro.merge_static_and_dynamic(
+        [None, (10, 10, 1.0)], [None, (20, 20, 1.0)],
+        [None, (20, 20, 1.0)], [0, 0],
+        x_max=100, y_max=100,
+    )
+    assert out[0] is None

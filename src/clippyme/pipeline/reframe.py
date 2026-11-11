@@ -34,10 +34,12 @@ from clippyme.pipeline.media_probe import (
 from clippyme.pipeline.run_ops import build_vfr_normalization_command
 from clippyme.pipeline.reframe_ops import (
     PanSmoother,
+    best_person_box_for,
     build_smoothed_trajectory,
     centroid_span,
     collapse_scene_targets,
     letterbox_plan,
+    merge_static_and_dynamic,
     salient_crop_center,
     weighted_interest_center,
 )
@@ -51,6 +53,7 @@ from clippyme.pipeline.reframe_detect import (  # noqa: F401
     _get_yolo_model,
     compute_mouth_aspect_ratio,
     detect_face_candidates,
+    detect_people_yolo,
     detect_person_yolo,
     ensure_yolo_weights,
 )
@@ -422,7 +425,7 @@ def create_frameshift_frame(frame, output_width, output_height, smoother=None):
         return _black_pad_to_output(frame, output_width, output_height)
 
 
-def analyze_scenes_strategy(video_path, scenes):
+def analyze_scenes_strategy(video_path, scenes, max_crop_width=None):
     """
     Analyzes each scene to determine framing strategy.
 
@@ -480,6 +483,7 @@ def analyze_scenes_strategy(video_path, scenes):
 
             face_counts = []
             primary_centers = []  # centre of the largest face per sampled frame
+            group_union_widths = []  # widest prominent-face union per sampled frame
             for f_idx in frames_to_check:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
                 ret, frame = cap.read()
@@ -489,8 +493,19 @@ def analyze_scenes_strategy(video_path, scenes):
                 face_counts.append(len(candidates))
                 if candidates:
                     # Largest-area face = the primary subject we'd track.
-                    px, py, pw, ph = max(candidates, key=lambda c: c['box'][2] * c['box'][3])['box']
+                    primary = max(candidates, key=lambda c: c['box'][2] * c['box'][3])
+                    px, py, pw, ph = primary['box']
                     primary_centers.append((px + pw / 2.0, py + ph / 2.0))
+                    # Prominent faces only: ignore tiny background/crowd faces.
+                    max_area = max(1.0, pw * ph)
+                    prominent = [
+                        c for c in candidates
+                        if (c['box'][2] * c['box'][3]) >= max_area * 0.10
+                    ]
+                    if len(prominent) >= 2:
+                        lefts = [c['box'][0] for c in prominent]
+                        rights = [c['box'][0] + c['box'][2] for c in prominent]
+                        group_union_widths.append(max(rights) - min(lefts))
                 else:
                     primary_centers.append(None)
 
@@ -504,8 +519,20 @@ def analyze_scenes_strategy(video_path, scenes):
             if avg_faces < 0.4:
                 strategies.append('GENERAL')
             elif max_faces >= 2 and avg_faces > 1.0:
-                # More than one face in the scene → WIDE (locked, zoomed-out).
-                strategies.append('WIDE')
+                # Multiple prominent faces. If their union cannot fit in the
+                # 9:16 crop at any zoom, use GROUP (blurred-background
+                # letterbox) so nobody is cut off. Otherwise a static WIDE crop
+                # can hold both.
+                group_policy = os.getenv("REFRAME_GROUP_POLICY", "blur").strip().lower()
+                too_wide = (
+                    bool(max_crop_width)
+                    and bool(group_union_widths)
+                    and max(group_union_widths) > max_crop_width * 0.95
+                )
+                if group_policy != "active_speaker" and too_wide:
+                    strategies.append('GROUP')
+                else:
+                    strategies.append('WIDE')
             elif centroid_span(primary_centers, frame_w, frame_h) > motion_thresh:
                 # Single subject but it roams too far to hold statically → WIDE.
                 strategies.append('WIDE')
@@ -596,6 +623,46 @@ def create_disabled_reframe(frame, output_width, output_height, zoom: float = 0.
     canvas[oy:oy + sh, ox:ox + sw] = scaled
     return canvas
 
+def create_group_frame(frame, output_width, output_height,
+                       blur: bool = True, dim: float = 0.65):
+    """Fit the WHOLE frame inside 9:16 with a blurred/dimmed background.
+
+    Used for GROUP scenes where two or more prominent faces cannot fit inside
+    the 9:16 crop. Unlike a tight crop this never cuts a person off; unlike a
+    plain letterbox it fills the frame with a soft version of the same shot.
+    Set ``REFRAME_GROUP_POLICY=letterbox`` for pure black bars.
+    """
+    src_h, src_w = frame.shape[:2]
+    if src_w <= 0 or src_h <= 0:
+        return cv2.resize(frame, (output_width, output_height))
+
+    scale = min(output_width / src_w, output_height / src_h)
+    fit_w = max(2, int(round(src_w * scale)))
+    fit_h = max(2, int(round(src_h * scale)))
+    fit = cv2.resize(frame, (fit_w, fit_h), interpolation=cv2.INTER_AREA)
+    x0 = (output_width - fit_w) // 2
+    y0 = (output_height - fit_h) // 2
+
+    if not blur:
+        canvas = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    else:
+        cover_scale = max(output_width / src_w, output_height / src_h)
+        cw = max(output_width, int(round(src_w * cover_scale)))
+        ch = max(output_height, int(round(src_h * cover_scale)))
+        cover = cv2.resize(frame, (cw, ch), interpolation=cv2.INTER_AREA)
+        cx = (cw - output_width) // 2
+        cy = (ch - output_height) // 2
+        bg = cover[cy:cy + output_height, cx:cx + output_width]
+        small = cv2.resize(bg, (max(2, output_width // 8), max(2, output_height // 8)),
+                           interpolation=cv2.INTER_AREA)
+        small = cv2.GaussianBlur(small, (0, 0), 3)
+        bg = cv2.resize(small, (output_width, output_height), interpolation=cv2.INTER_LINEAR)
+        canvas = (bg.astype(np.float32) * float(dim)).clip(0, 255).astype(np.uint8)
+
+    canvas[y0:y0 + fit_h, x0:x0 + fit_w] = fit
+    return canvas
+
+
 def _resize_to_output(img, w, h):
     """Resize a crop to output size with scale-aware interpolation.
 
@@ -653,6 +720,9 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
     cap = cv2.VideoCapture(input_video)
     frame_number = 0
     current_scene_index = 0
+    person_every = max(1, int(float(os.getenv("REFRAME_PERSON_EVERY", "12") or 12)))
+    people_cache = []
+    people_frame = -10_000
     print("   🔁 Global-smooth pass 1/2: tracking trajectory...")
     try:
         with tqdm(total=total_frames, desc="   Pass 1", file=sys.stdout) as pbar:
@@ -675,7 +745,7 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
                         speaker_tracker.reset(frame_number)
                         detection_smoother.reset()
                 strat = scene_strategies[current_scene_index] if current_scene_index < len(scene_strategies) else 'TRACK'
-                needs_pixels = strat not in ('DISABLED', 'GENERAL') and frame_number % 2 == 0
+                needs_pixels = strat not in ('DISABLED', 'GENERAL', 'GROUP') and frame_number % 2 == 0
                 if needs_pixels:
                     ret, frame = cap.read()
                 else:
@@ -684,7 +754,7 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
                     break
                 strategies.append(strat)
                 scene_ids.append(current_scene_index)
-                if strat in ('DISABLED', 'GENERAL'):
+                if strat in ('DISABLED', 'GENERAL', 'GROUP'):
                     targets.append(None)
                 else:
                     if needs_pixels:
@@ -694,7 +764,15 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
                             cand['mar'] = compute_mouth_aspect_ratio(frame, cand['box'])
                         target_box = speaker_tracker.get_target(candidates, frame_number, original_width)
                         if target_box:
-                            cameraman.update_target(target_box)
+                            person_box = None
+                            if frame_number - people_frame >= person_every:
+                                people_cache = detect_people_yolo(frame)
+                                people_frame = frame_number
+                            # Only associate a body when the target is one face,
+                            # not a wide group union (which spans two people).
+                            if people_cache and target_box[2] <= target_box[3] * 1.35:
+                                person_box = best_person_box_for(target_box, people_cache)
+                            cameraman.update_target(target_box, person_box=person_box)
                         elif strat == 'TRACK':
                             person_box = detect_person_yolo(frame)
                             if person_box:
@@ -739,20 +817,31 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
     # camera), still A/B-able.
     _static = (os.getenv("REFRAME_STATIC_AUTO") or "").strip().lower()
     static_auto = (_static in ("1", "true", "yes", "on")) if _static else True
+    dynamic = build_smoothed_trajectory(
+        targets, scene_ids, window=win, polyorder=2,
+        x_max=original_width, y_max=original_height,
+        min_zoom=1.0, max_zoom=1.6, method=global_method,
+        stationary_threshold=stationary_thresh, snap_center_dist=snap_center_dist,
+        lock_zoom=lock_zoom,
+    )
     if static_auto:
-        smoothed = collapse_scene_targets(
+        _cap = (os.getenv("REFRAME_TRACK_ZOOM_CAP") or "").strip()
+        track_zoom_cap = float(_cap) if _cap else 1.20
+        collapsed = collapse_scene_targets(
             targets, scene_ids, strategies,
             x_max=original_width, y_max=original_height,
             wide_zoom=1.0, snap_center_dist=snap_center_dist,
+            track_zoom_cap=track_zoom_cap,
+        )
+        _ms = (os.getenv("REFRAME_STATIC_MAX_SPAN") or "").strip()
+        max_span = float(_ms) if _ms else 0.12
+        smoothed = merge_static_and_dynamic(
+            collapsed, dynamic, targets, scene_ids,
+            x_max=original_width, y_max=original_height,
+            max_span_x=max_span, max_span_y=max_span,
         )
     else:
-        smoothed = build_smoothed_trajectory(
-            targets, scene_ids, window=win, polyorder=2,
-            x_max=original_width, y_max=original_height,
-            min_zoom=1.0, max_zoom=1.6, method=global_method,
-            stationary_threshold=stationary_thresh, snap_center_dist=snap_center_dist,
-            lock_zoom=lock_zoom,
-        )
+        smoothed = dynamic
 
     # --- Pass 2: render from the smoothed trajectory -----------------------
     print("   🔁 Global-smooth pass 2/2: rendering...")
@@ -773,6 +862,11 @@ def _render_global_smooth(input_video, ffmpeg_process, cameraman, speaker_tracke
                     strat = strategies[frame_number] if frame_number < len(strategies) else 'TRACK'
                     if strat == 'DISABLED':
                         output_frame = create_disabled_reframe(frame, output_width, output_height)
+                    elif strat == 'GROUP':
+                        output_frame = create_group_frame(
+                            frame, output_width, output_height,
+                            blur=os.getenv("REFRAME_GROUP_POLICY", "blur").strip().lower() != "letterbox",
+                        )
                     elif strat == 'GENERAL':
                         output_frame = create_general_frame(frame, output_width, output_height)
                     else:
@@ -975,7 +1069,8 @@ def _process_video_to_vertical_impl(input_video, final_output_video, temp_files,
         scene_strategies = ['OBJECT'] * len(scenes)
     else:
         print("\n   🤖 Step 3: Analyzing Scenes for Strategy (Single vs Group)...")
-        scene_strategies = analyze_scenes_strategy(input_video, scenes)
+        scene_strategies = analyze_scenes_strategy(
+            input_video, scenes, max_crop_width=cameraman.max_crop_width)
 
     print("\n   ✂️ Step 4: Processing video frames...")
 
@@ -1023,6 +1118,9 @@ def _process_video_to_vertical_impl(input_video, final_output_video, temp_files,
     
         frame_number = 0
         current_scene_index = 0
+        person_every = max(1, int(float(os.getenv("REFRAME_PERSON_EVERY", "12") or 12)))
+        people_cache = []
+        people_frame = -10_000
         # Corrupt/failed-frame resilience (ported from kamilstanuch/Autocrop-vertical):
         # if a single frame raises mid-processing, duplicate the last good output
         # instead of letting the exception abort the whole render (which would
@@ -1099,6 +1197,12 @@ def _process_video_to_vertical_impl(input_video, final_output_video, temp_files,
                         output_frame = create_disabled_reframe(
                             frame, OUTPUT_WIDTH, OUTPUT_HEIGHT, zoom=letterbox_zoom)
 
+                    elif current_strategy == 'GROUP':
+                        output_frame = create_group_frame(
+                            frame, OUTPUT_WIDTH, OUTPUT_HEIGHT,
+                            blur=os.getenv("REFRAME_GROUP_POLICY", "blur").strip().lower() != "letterbox",
+                        )
+
                     elif current_strategy == 'OBJECT':
                         # FrameShift face-first crop: weighted-interest centroid
                         # over faces (1.0) → persons (0.8) → objects (0.5), with a
@@ -1130,7 +1234,13 @@ def _process_video_to_vertical_impl(input_video, final_output_video, temp_files,
                                 cand['mar'] = compute_mouth_aspect_ratio(frame, cand['box'])
                             target_box = speaker_tracker.get_target(candidates, frame_number, original_width)
                             if target_box:
-                                cameraman.update_target(target_box)
+                                person_box = None
+                                if frame_number - people_frame >= person_every:
+                                    people_cache = detect_people_yolo(frame)
+                                    people_frame = frame_number
+                                if people_cache and target_box[2] <= target_box[3] * 1.35:
+                                    person_box = best_person_box_for(target_box, people_cache)
+                                cameraman.update_target(target_box, person_box=person_box)
                             elif current_strategy == 'TRACK':
                                 # Single-speaker scene: fall back to YOLO body detection
                                 person_box = detect_person_yolo(frame)

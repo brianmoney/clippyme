@@ -190,16 +190,24 @@ they sit just under the video instead of floating low in the black.
 a fixed zoom, geometry in the pure `reframe_ops.letterbox_plan`). `disabled`
 also forces the Ken Burns push OFF (`zoom_end=None` in
 `process_video_to_vertical`) — a locked frame must not drift.
-Comfort mode is default-on: within a scene the camera
-never moves (`collapse_scene_targets`), zoom locks per scene. The output
-aspect is an explicit `process_video_to_vertical(..., aspect_ratio=)`
-parameter passed by `main.py` per job — there is no module-global. Post-hoc
-mode switching (`POST /api/reframe/{job}/{clip}`) spawns
-`main.py --reframe-only` on the preserved source slice. Camera/decision math
-lives in `reframe_ops.py`/`reframe_track.py` (pure, host-tested) — add new
-reframe logic there, not in the cv2-bound modules.
-⚠️ `REFRAME_GLOBAL_METHOD=kalman|l2` only runs with `REFRAME_STATIC_AUTO=0`;
-the default static-auto policy never reaches the trajectory smoother.
+Comfort mode is default-on: a stationary scene is locked to one crop
+(`collapse_scene_targets`) while a scene whose tracked centre actually travels
+switches to the smoothed dynamic path (`merge_static_and_dynamic`,
+`REFRAME_STATIC_MAX_SPAN`) so the subject cannot walk out of frame. Face boxes
+are padded for hair/chin and a cadence-limited YOLO body check caps the zoom to
+the person's shoulders (`REFRAME_SUBJECT_PADDING`, `REFRAME_FACE_*`,
+`REFRAME_PERSON_EVERY`, `REFRAME_TRACK_ZOOM_CAP`). Multi-person scenes whose
+prominent faces cannot fit the 9:16 crop use `GROUP` — whole frame with a
+blurred background by default (`REFRAME_GROUP_POLICY=blur|letterbox|active_speaker`),
+so nobody is cut off. The output aspect is an explicit
+`process_video_to_vertical(..., aspect_ratio=)` parameter passed by `main.py`
+per job — there is no module-global. Post-hoc mode switching
+(`POST /api/reframe/{job}/{clip}`) spawns `main.py --reframe-only` on the
+preserved source slice. Camera/decision math lives in
+`reframe_ops.py`/`reframe_track.py` (pure, host-tested) — add new reframe logic
+there, not in the cv2-bound modules.
+⚠️ `REFRAME_GLOBAL_METHOD=kalman|l2` applies to dynamic scenes / when
+`REFRAME_STATIC_AUTO=0`; stationary scenes still use the locked path.
 
 **Smart Cut**: transcript-driven silence/filler removal rendered via a
 hand-built auto-editor v3 JSON timeline (ffmpeg concat fallback if the binary

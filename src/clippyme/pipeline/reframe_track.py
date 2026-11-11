@@ -13,8 +13,10 @@ from clippyme.pipeline.reframe_ops import (
     OneEuroFilter,
     advance_value_with_velocity,
     asymmetric_zoom_step,
+    best_person_box_for,
     drift_to_center,
     limit_step,
+    pad_face_box,
     zoom_for_face_height,
 )
 
@@ -133,7 +135,16 @@ class SmoothedCameraman:
             self._max_step_px if self._max_step_px > 0 else self.max_crop_width * 0.05
         )
 
-    def update_target(self, face_box, is_person_box: bool = False):
+        # Subject-safety framing. Face boxes are tight; a person's hair/chin and
+        # shoulders sit outside them. Padding + a body-width zoom cap keeps the
+        # whole head/shoulders in frame instead of cropping at the face edge.
+        self.subject_pad_side = float(os.getenv("REFRAME_SUBJECT_PADDING", "0.12") or 0.12)
+        self.face_pad_top = float(os.getenv("REFRAME_FACE_TOP_PADDING", "0.20") or 0.20)
+        self.face_pad_bottom = float(os.getenv("REFRAME_FACE_BOTTOM_PADDING", "0.08") or 0.08)
+        self.face_occupancy = float(os.getenv("REFRAME_FACE_OCCUPANCY", "0.33") or 0.33)
+        self.face_max_zoom = float(os.getenv("REFRAME_FACE_MAX_ZOOM", "1.45") or 1.45)
+
+    def update_target(self, face_box, is_person_box: bool = False, person_box=None):
         if not face_box:
             return
         self.frames_since_target = 0
@@ -142,20 +153,51 @@ class SmoothedCameraman:
         if is_person_box:
             self.target_center_y = y + height * 0.15
             self.target_zoom = 1.0
-        else:
-            self.target_center_y = y + height / 2
-            # A wide union/group box must pull back rather than treating its
-            # height as a small face and zooming into only the centre speaker.
-            if width > height * 1.35:
-                self.target_zoom = 1.0
+            return
+
+        # Include hair/forehead and chin, plus a side margin, before choosing
+        # the centre/zoom. The crop must contain a person, not just their face.
+        padded = pad_face_box(
+            face_box, self.video_width, self.video_height,
+            side_ratio=self.subject_pad_side,
+            top_ratio=self.face_pad_top,
+            bottom_ratio=self.face_pad_bottom,
+        )
+        px, py, pw, ph = padded
+        self.target_center_x = px + pw / 2
+        self.target_center_y = py + ph / 2
+
+        if person_box:
+            person = best_person_box_for(face_box, [person_box]) or person_box
+            bx, by, bw, bh = person
+            # Horizontal: follow the body centre when it contains the face.
+            # This is more stable than the face centre in profiles/close-ups
+            # and stops the person drifting out of a narrow 9:16 slice.
+            face_cx = x + width / 2
+            if bx <= face_cx <= bx + bw:
+                self.target_center_x = bx + bw / 2
+            # Zoom out until the body's shoulders fit with a small margin.
+            if bw > 0:
+                body_zoom_cap = self.max_crop_width / max(1.0, bw * 1.10)
+                self.target_zoom = max(1.0, min(self.face_max_zoom, body_zoom_cap))
             else:
-                self.target_zoom = zoom_for_face_height(
-                    height,
-                    self.max_crop_height,
-                    target_occupancy=0.4,
-                    min_zoom=1.0,
-                    max_zoom=1.6,
-                )
+                self.target_zoom = 1.0
+        else:
+            self.target_zoom = self.face_max_zoom
+
+        # A wide union/group box must pull back rather than treating its
+        # height as a small face and zooming into only the centre speaker.
+        if width > height * 1.35:
+            self.target_zoom = 1.0
+        else:
+            face_zoom = zoom_for_face_height(
+                ph,
+                self.max_crop_height,
+                target_occupancy=self.face_occupancy,
+                min_zoom=1.0,
+                max_zoom=self.face_max_zoom,
+            )
+            self.target_zoom = max(1.0, min(self.target_zoom, face_zoom))
 
     def _ease_axis(self, current: float, target: float, safe_radius: float, fast_ref: float) -> float:
         difference = target - current

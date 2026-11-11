@@ -148,3 +148,28 @@ def test_speaker_tracker_reset_forgets_identities():
     assert st.active_speaker_id is not None
     st.reset(frame_number=10)
     assert st.active_speaker_id is None and st.known_faces == []
+
+
+def test_face_padding_and_body_width_cap_zoom():
+    cam = SmoothedCameraman(608, 1080, 1920, 1080)
+    # A close-up face with a much wider body box: the body must cap the zoom so
+    # shoulders aren't cropped, and the camera centres on the body, not the
+    # face edge.
+    cam.update_target((1500, 200, 200, 220), person_box=(1300, 100, 500, 900))
+    assert cam.target_zoom <= 1.12
+    assert cam.target_center_x == pytest.approx(1550.0)
+
+
+def test_face_padding_centres_symmetric_box():
+    cam = SmoothedCameraman(608, 1080, 1920, 1080)
+    cam.update_target((800, 100, 200, 300))
+    assert cam.target_center_x == pytest.approx(900.0)
+    assert cam.target_zoom < 1.6
+
+
+def test_face_padding_keeps_hair_above_raw_face_box():
+    cam = SmoothedCameraman(608, 1080, 1920, 1080)
+    cam.update_target((800, 300, 200, 200))
+    # Raw face centre y = 400; padded box includes more hair above, so the
+    # target sits above the raw centre.
+    assert cam.target_center_y < 400
