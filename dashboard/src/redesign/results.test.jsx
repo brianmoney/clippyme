@@ -270,6 +270,27 @@ test('does not recompose when the composed file is present', async () => {
   expect(compose).not.toHaveBeenCalled();
 });
 
+test('a fresh browser uses the server composed file without re-composing', async () => {
+  const compose = vi.spyOn(realApi, 'composeClip').mockResolvedValue({ composed_url: '/x.mp4' });
+  render(
+    <ResultsView
+      clips={[{ ...clip, composed_url: '/videos/job-1/Test Clip_1.mp4' }]}
+      jobId="job-1"
+      preselections={{ subtitles: { mode: 'karaoke', preset: 'hormozi_bold' } }}
+      clipStates={{}}
+      onUpdateClipState={vi.fn()}
+      onBack={vi.fn()}
+      onPublish={vi.fn()}
+      onPublishAll={vi.fn()}
+      onEdit={vi.fn()}
+      onApplyToAll={vi.fn()}
+      onEditSelected={vi.fn()}
+    />,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(compose).not.toHaveBeenCalled();
+});
+
 test('a failed recipe compose stays retryable (does not mark the recipe applied)', async () => {
   // Persisting toggles on failure made every later mount skip the recipe, so
   // one transient compose error left all clips raw forever. Keep the state

@@ -1,6 +1,6 @@
 // useClipStates — per-clip state persisted in localStorage per job.
-// Pins the transient-`processing` reset on load (a reload mid-render must not
-// leave a card wedged on the "Reprocessing…" overlay).
+// Pins the transient-`processing` lifetime across reloads: a recent render keeps
+// its overlay; a stale flag (crashed render) is cleared.
 import { test, expect } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useClipStates } from './useClipStates.js';
@@ -8,15 +8,25 @@ import { useClipStates } from './useClipStates.js';
 const JOB = 'job-abc';
 const KEY = `clippyme_clip_states_${JOB}`;
 
-test('processing flag is cleared when state loads from storage', async () => {
+test('a recent processing flag survives a reload', async () => {
   localStorage.setItem(KEY, JSON.stringify({
-    0: { processing: true, reframeMode: 'subject' },
+    0: { processing: true, processingSince: Date.now() - 30_000, reframeMode: 'subject' },
     1: { publishedAt: 42 },
   }));
   const { result } = renderHook(() => useClipStates(JOB));
   await waitFor(() => expect(result.current.getClipState(0).reframeMode).toBe('subject'));
-  expect(result.current.getClipState(0).processing).toBe(false);
+  expect(result.current.getClipState(0).processing).toBe(true);
   expect(result.current.getClipState(1).publishedAt).toBe(42);
+});
+
+test('a stale or untimed processing flag is cleared on load', async () => {
+  localStorage.setItem(KEY, JSON.stringify({
+    0: { processing: true, processingSince: Date.now() - 60 * 60 * 1000 },
+    1: { processing: true },
+  }));
+  const { result } = renderHook(() => useClipStates(JOB));
+  await waitFor(() => expect(result.current.getClipState(0).processing).toBe(false));
+  expect(result.current.getClipState(1).processing).toBe(false);
 });
 
 test('a stored karaoke font override is dropped on load, a classic font is kept', async () => {

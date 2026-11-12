@@ -5,6 +5,7 @@ import { LazyVideo } from './LazyVideo';
 import { AiCaptionPanel } from './aiCaptions';
 import { clipPreviewSrc, fmtDuration, downloadClip, exportClip, getClipTranscript, composeClip } from './realApi';
 import { seedToggles, seedHookParams, seedSubtitleParams, seedLogoParams, seedGradeParams, seedBannerParams, seedTopTextParams } from '../lib/seedClipParams';
+import { processingLabel } from '../hooks/useClipStates';
 
 const REFRAME_ICON = { auto: 'crop', subject: 'scan-face', object: 'scan-face', disabled: 'square' };
 const REFRAME_LABEL = { auto: 'Auto', subject: 'Subject', object: 'Subject', disabled: 'Off' };
@@ -26,6 +27,7 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
   const mode = state?.reframeMode || clip.reframe_mode || 'auto';
   const title = clip.video_title_for_youtube_short || `Clip ${index + 1}`;
   const processing = !!state?.processing;
+  const busyLabel = processingLabel(state);
   const selectionProps = selectMode ? {
     role: 'checkbox',
     tabIndex: 0,
@@ -135,11 +137,11 @@ const ClipCard = memo(function ClipCard({ clip, index, jobId, state, preselectio
           {state?.publishedAt && <span className="clip-pub"><Icon n="check" />published</span>}
           <span className="dur" style={{ marginLeft: state?.publishedAt ? 8 : 0 }}>{fmtDuration(clip.start, clip.end)}</span>
         </div>
-        {processing && <div className="clip-busy" role="status"><Icon n="loader" /><span>Reprocessing…</span></div>}
+        {processing && <div className="clip-busy" role="status"><Icon n="loader" /><span>{busyLabel}</span></div>}
       </div>
       {!selectMode && (
         <button type="button" className="clip-edit" disabled={processing} onClick={(event) => { event.stopPropagation(); onEdit(clip, index); }}
-          aria-label={`Edit and reprocess ${title}`}><Icon n={processing ? 'loader' : 'sliders-horizontal'} />{processing ? 'Reprocessing…' : 'Edit & reprocess'}</button>
+          aria-label={`Edit and reprocess ${title}`}><Icon n={processing ? 'loader' : 'sliders-horizontal'} />{processing ? busyLabel : 'Edit & reprocess'}</button>
       )}
       <div className="clip-foot">
         <span className="ttl" title={title}>{title}</span>
@@ -299,11 +301,11 @@ export function ResultsView({ clips, jobId, preselections, sourceBanner, clipSta
     const recipeToggles = seedToggles(preselections);
     for (const { c: clip, i } of visible) {
       const state = clipStates[i] || {};
-      // A recipe-composed file is present on disk and the UI already points at
-      // it: nothing to do. If the preview URL survived in localStorage but the
-      // file is gone (interrupted compose, cleanup), `clip.composed_url` is
-      // absent and we regenerate below instead of showing a dead tile.
-      if (state.previewUrl && clip.composed_url) continue;
+      // The server already has a composed file for this clip. With no
+      // per-clip edit state, that file IS the recipe output: show it instead
+      // of re-composing every clip on every fresh page load. If a per-clip
+      // edit exists but its preview URL is gone, regenerate that edit below.
+      if (clip.composed_url && (!state.toggles || state.previewUrl)) continue;
       const toggles = state.toggles || recipeToggles;
       if (!Object.values(toggles).some(Boolean)) continue;
       const key = `${jobId}:${i}`;
@@ -337,16 +339,16 @@ export function ResultsView({ clips, jobId, preselections, sourceBanner, clipSta
         toggles, hookParams, subtitleParams, logoParams, gradeParams,
         bannerParams, topTextParams, dropRanges,
       };
-      onUpdateClipState(i, { processing: true });
+      onUpdateClipState(i, { processing: true, processingSince: Date.now() });
       composeClip(jobId, apiIndex, apiParams)
         .then(({ composed_url }) => onUpdateClipState(i, {
-          ...clipState, processing: false, composeError: false,
+          ...clipState, processing: false, processingSince: null, composeError: false,
           previewUrl: composed_url, previewBust: Date.now(),
         }))
         .catch((err) => {
           // Keep the attempted params so a later reload retries them; the
           // preview check above (not `toggles`) is what prevents a stuck loop.
-          onUpdateClipState(i, { processing: false, composeError: true });
+          onUpdateClipState(i, { processing: false, processingSince: null, composeError: true });
           pushToast?.('warn', `Clip ${i + 1}: could not apply the recipe — ${
             String(err?.message || err).slice(0, 90)
           }`);

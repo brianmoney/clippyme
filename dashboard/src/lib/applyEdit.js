@@ -11,9 +11,12 @@ export async function runApplyEdit({ jobId, idx, apiIdx = idx, params, api, upda
   const anyCompose = !!(toggles.smartcut || toggles.subtitles || toggles.hook || toggles.logo || toggles.grade || toggles.banner || toggles.toptext);
 
   // Persist the user's choices + flip the card into its processing state up
-  // front (so the badge/preview already reflect the new reframe mode).
+  // front (so the badge/preview already reflect the new reframe mode). The
+  // timestamp lets a reload keep the overlay during a long compose.
+  const needsProcessing = reframeChanged || anyCompose;
   updateClipState(idx, { reframeMode, toggles, subtitleParams, hookParams, logoParams, gradeParams, bannerParams, topTextParams, dropRanges,
-    processing: reframeChanged || anyCompose });
+    processing: needsProcessing,
+    ...(needsProcessing ? { processingSince: now() } : { processingSince: null }) });
 
   if (!reframeChanged && !anyCompose) {
     pushToast('success', `Clip ${idx + 1} updated`);
@@ -46,9 +49,9 @@ export async function runApplyEdit({ jobId, idx, apiIdx = idx, params, api, upda
         top_text_params: toggles.toptext ? topTextParams : {},
         drop_ranges: toggles.smartcut ? (dropRanges || []) : [],
       });
-      updateClipState(idx, { previewUrl: composed_url, previewBust: now(), processing: false });
+      updateClipState(idx, { previewUrl: composed_url, previewBust: now(), processing: false, processingSince: null });
     } else {
-      updateClipState(idx, { processing: false });
+      updateClipState(idx, { processing: false, processingSince: null });
     }
     pushToast('success', `Clip ${idx + 1} updated`);
   } catch (err) {
@@ -56,11 +59,11 @@ export async function runApplyEdit({ jobId, idx, apiIdx = idx, params, api, upda
     // cache-buster even though composing failed — otherwise the card serves
     // the pre-reframe cached URL forever.
     if (reframeApplied) {
-      updateClipState(idx, { reframeBust: now(), previewUrl: undefined, processing: false });
+      updateClipState(idx, { reframeBust: now(), previewUrl: undefined, processing: false, processingSince: null });
       pushToast('error', `Clip ${idx + 1}: reframed, but composing the layers failed.`);
       return;
     }
-    updateClipState(idx, { processing: false });
+    updateClipState(idx, { processing: false, processingSince: null });
     pushToast('error', err?.status === 409
       ? `Clip ${idx + 1} is too old to reframe — reprocess the video first.`
       : `Clip ${idx + 1} reprocess failed: ` + String(err?.message || err).slice(0, 50));

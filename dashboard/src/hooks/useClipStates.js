@@ -4,14 +4,27 @@ import { readStoredJson, removeStoredValue, subscribeStoredJson, writeStoredJson
 
 const validStates = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
+// A compose can take a couple of minutes. Keep the "processing" overlay across
+// a reload during that window (clearing it made the card show the raw clip as if
+// the render had finished); stale flags from a crashed render expire.
+const PROCESSING_STALE_MS = 15 * 60 * 1000;
+const RECIPE_LABELS = { subtitles: 'Applying subtitles…', hook: 'Applying hook…' };
+
 function keyFor(jobId) { return `clippyme_clip_states_${jobId}`; }
 
 function normalize(value) {
   if (!validStates(value)) return {};
+  const now = Date.now();
   const next = {};
   for (const [key, state] of Object.entries(value)) {
     if (!/^\d+$/.test(key) || !state || typeof state !== 'object') continue;
-    let clean = state.processing ? { ...state, processing: false } : state;
+    let clean = { ...state };
+    if (clean.processing) {
+      const since = Number(clean.processingSince);
+      if (!Number.isFinite(since) || now - since > PROCESSING_STALE_MS) {
+        clean = { ...clean, processing: false, processingSince: null };
+      }
+    }
     // Older builds saved a `font` with every karaoke edit although karaoke has
     // no font picker; dropping it lets the preset's font apply again.
     const sp = clean.subtitleParams;
@@ -22,6 +35,13 @@ function normalize(value) {
     next[key] = clean;
   }
   return next;
+}
+
+export function processingLabel(state) {
+  const toggles = state?.toggles || {};
+  if (toggles.subtitles) return RECIPE_LABELS.subtitles;
+  if (toggles.hook) return RECIPE_LABELS.hook;
+  return 'Reprocessing…';
 }
 
 export function useClipStates(jobId) {
