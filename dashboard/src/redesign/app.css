@@ -345,8 +345,12 @@ select.sel:focus{outline:0;border-color:var(--brand-blue)}
 /* Decorative scrim sits ABOVE the <video> (z-index 0) but must NOT swallow
    clicks — otherwise the native <video controls> play/seek bar is unreachable
    and the player looks broken ("won't play"). pointer-events:none lets the
-   click fall through to the controls underneath. */
-.clip-media::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.4),transparent 26%,transparent 58%,rgba(0,0,0,.72));z-index:1;pointer-events:none}
+   click fall through to the controls underneath.
+   Keep the scrim to the TOP only: burned-in subtitles sit at the bottom edge
+   and a bottom scrim dimmed them into the background, which read as "no
+   subtitles" while the top-positioned hook stayed clearly visible. The
+   duration/published badges carry their own background. */
+.clip-media::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.4),transparent 26%);z-index:1;pointer-events:none}
 /* Info overlays are click-through for the same reason; interactive children
    (none by default now) re-enable pointer-events explicitly. */
 .clip-top{position:relative;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
