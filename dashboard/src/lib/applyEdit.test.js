@@ -54,6 +54,23 @@ test('reframe-only: calls reframeClip, busts cache, never composes', async () =>
   expect(calls.states.at(-1).processing).toBe(false);
 });
 
+test('reframe + compose keeps the previous subtitled preview during the render', async () => {
+  const { calls, args } = makeCtx();
+  await runApplyEdit({
+    ...args,
+    params: baseParams({
+      reframeMode: 'subject',
+      toggles: { smartcut: false, subtitles: true, hook: false, logo: false, grade: false },
+    }),
+  });
+  expect(args.api.reframeClip).toHaveBeenCalledWith(JOB, 2, 'subject');
+  expect(args.api.composeClip).toHaveBeenCalled();
+  const bust = calls.states.find((p) => p.reframeBust);
+  // The old composed preview must not be cleared while the new compose runs.
+  expect(bust.reframeBust).toBe(1234);
+  expect('previewUrl' in bust).toBe(false);
+});
+
 test('compose-only: gates every param object by its toggle', async () => {
   const { args } = makeCtx();
   await runApplyEdit({

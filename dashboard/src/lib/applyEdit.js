@@ -27,7 +27,13 @@ export async function runApplyEdit({ jobId, idx, apiIdx = idx, params, api, upda
       reframeApplied = true;
       // Reframe overwrites the clip on disk → bust the cache + drop any stale
       // composed preview so the card re-fetches the freshly framed clip.
-      updateClipState(idx, { reframeBust: now(), previewUrl: undefined });
+      updateClipState(idx, {
+        reframeBust: now(),
+        // If a compose follows, keep the previous subtitled preview visible
+        // until the new one is atomically ready instead of flashing the raw
+        // (un-subtitled) reframed clip for the duration of the compose.
+        ...(anyCompose ? {} : { previewUrl: undefined }),
+      });
     }
     if (anyCompose) {
       const { composed_url } = await api.composeClip(jobId, apiIdx, {
