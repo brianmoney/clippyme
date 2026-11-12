@@ -137,6 +137,24 @@ def test_viral_models_uses_saved_provider(client, monkeypatch):
     assert captured["key"] == "cc-key"
 
 
+def test_viral_models_allow_list_filters_catalog(client, monkeypatch):
+    client.post("/api/config", json={"keys": {
+        "VIRAL_PROVIDER": "openai",
+        "VIRAL_ALLOWED_MODELS": "deepseek/deepseek-v4.1-flash",
+    }})
+
+    def fake_list(key, base_url):
+        return {"models": [
+            {"name": "claude-sonnet-5"},
+            {"name": "deepseek/deepseek-v4-flash"},
+        ]}
+
+    monkeypatch.setattr(config_module.viral_ai, "list_available_models", fake_list)
+    r = client.get("/api/config/viral-models", headers={"X-Viral-Key": "cc-key"})
+    assert r.status_code == 200
+    assert [m["name"] for m in r.json()["models"]] == ["deepseek/deepseek-v4.1-flash"]
+
+
 def test_viral_models_can_use_gemini_provider(client, monkeypatch):
     monkeypatch.setattr(config_module, "list_available_models", lambda key: {"models": ["gemini-a"]})
     r = client.get("/api/config/viral-models?provider=gemini")
@@ -164,6 +182,9 @@ def test_config_viral_keys_roundtrip_and_validation(client):
     ).status_code == 422
     assert client.post(
         "/api/config", json={"keys": {"VIRAL_MODEL": "bad model; rm"}}
+    ).status_code == 422
+    assert client.post(
+        "/api/config", json={"keys": {"VIRAL_ALLOWED_MODELS": "bad model; rm"}}
     ).status_code == 422
 
 

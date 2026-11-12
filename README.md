@@ -156,6 +156,7 @@ All API keys, model selection, and cookies are managed **from the dashboard Sett
 | `VIRAL_PROVIDER` | Alternative viral provider | `gemini` (default) or `openai`. `openai` routes to any OpenAI/Anthropic-compatible endpoint, including Command Code (Claude, GPT and open models). Configure in Settings → Viral moment provider. |
 | `VIRAL_BASE_URL` / `VIRAL_API_KEY` / `VIRAL_MODEL` | Command Code provider | Default base URL `https://api.commandcode.ai/provider/v1`; model is any id from `/provider/v1/models` (e.g. `claude-sonnet-5`, `gpt-6-sol`, `deepseek/deepseek-v4-flash`). Empty model defaults to `claude-sonnet-5`. |
 | `VIRAL_FALLBACK_MODELS` | Provider fallback chain | Comma-separated model ids tried after `VIRAL_MODEL` on quota/outage errors. Default `claude-sonnet-5-5`. |
+| `VIRAL_ALLOWED_MODELS` | Restrict selectable viral models | Comma-separated ids shown in Settings/Create. An allow-listed id stays selectable even when the provider catalog omits it (useful for a discounted single-model subscription). Empty = no restriction. |
 | `VIRAL_MODE` | Selection strategy | `auto` (default: two-stage on Command Code, legacy on Gemini), `two_stage`, or `single`. |
 | `VIRAL_DISCOVERY_MODEL` | Stage 1 discovery | Default `z-ai/glm-5.3-flash`. High-recall candidate finder; no titles/hooks/scores at this stage. |
 | `VIRAL_REVIEW_MODEL` | Stage 2 editorial review | Default `claude-opus-5-5`. Independently scores the 10-dimension rubric, rejects weak/duplicate/misleading candidates and returns the ordered shortlist. |

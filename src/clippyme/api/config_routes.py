@@ -128,6 +128,12 @@ async def list_viral_models(
             api_key or os.environ.get("VIRAL_API_KEY") or config.get("VIRAL_API_KEY"),
             base_url or os.environ.get("VIRAL_BASE_URL") or config.get("VIRAL_BASE_URL"),
         )
+        # A discounted subscription may be restricted to one model. The
+        # allow-list also keeps unlisted pass-through ids selectable.
+        result = viral_ai.filter_allowed_models(
+            result,
+            config.get("VIRAL_ALLOWED_MODELS") or os.environ.get("VIRAL_ALLOWED_MODELS"),
+        )
     return {"provider": selected, **result}
 
 

@@ -80,6 +80,7 @@ services:
       - VIRAL_API_KEY=${VIRAL_API_KEY:-}
       - VIRAL_MODEL=${VIRAL_MODEL:-}
       - VIRAL_FALLBACK_MODELS=${VIRAL_FALLBACK_MODELS:-}
+      - VIRAL_ALLOWED_MODELS=${VIRAL_ALLOWED_MODELS:-}
       # Two-stage discovery → editorial review (see README).
       - VIRAL_MODE=${VIRAL_MODE:-auto}
       - VIRAL_DISCOVERY_MODEL=${VIRAL_DISCOVERY_MODEL:-z-ai/glm-5.3-flash}

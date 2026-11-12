@@ -247,6 +247,33 @@ def test_generate_text_skips_model_specific_403_but_not_plan_403():
     assert err.value.status_code == 403
 
 
+def test_filter_allowed_models_keeps_only_listed_ids():
+    result = {"models": [
+        {"name": "deepseek/deepseek-v4-flash", "display_name": "DS Flash"},
+        {"name": "z-ai/glm-5.3-flash", "display_name": "GLM"},
+    ]}
+    out = v.filter_allowed_models(result, "deepseek/deepseek-v4-flash")
+    assert [m["name"] for m in out["models"]] == ["deepseek/deepseek-v4-flash"]
+    assert out["models"][0]["display_name"] == "DS Flash"
+
+
+def test_filter_allowed_models_adds_unlisted_pass_through_id():
+    # CommandCode's proxy catalog omits some upstream ids (the discounted
+    # deepseek-v4.1-flash among them); the allow-list must still offer it.
+    out = v.filter_allowed_models(
+        {"models": [{"name": "claude-sonnet-5"}]},
+        "deepseek/deepseek-v4.1-flash",
+    )
+    assert [m["name"] for m in out["models"]] == ["deepseek/deepseek-v4.1-flash"]
+    assert out["models"][0]["endpoint"] == "chat"
+
+
+def test_filter_allowed_models_empty_list_is_a_noop():
+    result = {"models": [{"name": "a"}]}
+    assert v.filter_allowed_models(result, "") is result
+    assert v.filter_allowed_models(result, None) is result
+
+
 def test_generate_once_retries_truncated_reasoning_output(monkeypatch):
     calls = []
 

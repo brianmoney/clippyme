@@ -269,6 +269,7 @@ _ALLOWED_CONFIG_KEYS = frozenset({
     "OPENAI_CAPTIONS_MODEL",
     "VIRAL_PROVIDER", "VIRAL_BASE_URL", "VIRAL_API_KEY", "VIRAL_MODEL",
     "VIRAL_FALLBACK_MODELS",
+    "VIRAL_ALLOWED_MODELS",
     "VIRAL_MODE", "VIRAL_DISCOVERY_MODEL", "VIRAL_REVIEW_MODEL",
     "VIRAL_COPY_MODEL", "VIRAL_MAX_CANDIDATES", "VIRAL_MAX_SELECTED_CLIPS",
     "VIRAL_MIN_QUALITY", "VIRAL_MAX_ANALYSIS_COST",
@@ -320,6 +321,10 @@ class ConfigUpdateRequest(BaseModel):
             part = part.strip()
             if part and not MODEL_ID_RE.fullmatch(part):
                 raise ValueError("VIRAL_FALLBACK_MODELS contains an invalid model id")
+        for part in (values.get("VIRAL_ALLOWED_MODELS") or "").split(","):
+            part = part.strip()
+            if part and not MODEL_ID_RE.fullmatch(part):
+                raise ValueError("VIRAL_ALLOWED_MODELS contains an invalid model id")
         viral_mode = values.get("VIRAL_MODE")
         if viral_mode not in (None, "", "auto", "single", "two_stage"):
             raise ValueError("VIRAL_MODE must be auto, single or two_stage")

@@ -30,6 +30,9 @@ VALID_CONFIG_KEYS = (
     "VIRAL_API_KEY",
     "VIRAL_MODEL",
     "VIRAL_FALLBACK_MODELS",
+    # Optional comma-separated allow-list for the provider catalog (a
+    # discounted subscription restricted to specific model ids).
+    "VIRAL_ALLOWED_MODELS",
     # Two-stage discovery → editorial review (CommandCode).
     "VIRAL_MODE",
     "VIRAL_DISCOVERY_MODEL",
@@ -469,6 +472,7 @@ def load_persistent_config() -> dict:
         "VIRAL_FALLBACK_MODELS": os.environ.get(
             "VIRAL_FALLBACK_MODELS", "claude-sonnet-5-5"
         ),
+        "VIRAL_ALLOWED_MODELS": os.environ.get("VIRAL_ALLOWED_MODELS", ""),
         "VIRAL_MODE": os.environ.get("VIRAL_MODE", "auto"),
         "VIRAL_DISCOVERY_MODEL": os.environ.get(
             "VIRAL_DISCOVERY_MODEL", "z-ai/glm-5.3-flash"

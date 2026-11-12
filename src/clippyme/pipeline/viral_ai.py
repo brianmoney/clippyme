@@ -364,6 +364,33 @@ def generate_text(
     raise ViralAIError("No models configured", status_code=400)
 
 
+def filter_allowed_models(result: dict, allowed: str | None) -> dict:
+    """Restrict a provider catalog to an explicit allow-list.
+
+    ``allowed`` is a comma-separated model-id list (``VIRAL_ALLOWED_MODELS``).
+    An allow-listed model is included even when the provider's ``/models``
+    response omits it (Command Code's proxy does not list every pass-through
+    id, e.g. ``deepseek/deepseek-v4.1-flash``). Empty allow-list = no filter.
+    """
+    names = [part.strip() for part in (allowed or "").split(",") if part.strip()]
+    if not names:
+        return result
+    known = {
+        item.get("name"): item
+        for item in (result.get("models") or [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    models = []
+    for name in names:
+        models.append(known.get(name) or {
+            "name": name,
+            "display_name": name,
+            "endpoint": endpoint_for_model(name, []),
+            "context_length": None,
+        })
+    return {**result, "models": models}
+
+
 def list_available_models(api_key: str | None, base_url: str | None = None,
                           *, timeout: float = LIST_MODELS_TIMEOUT_S,
                           get_fn=None) -> dict:
